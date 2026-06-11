@@ -9,7 +9,7 @@ services:
     container_name: painel-db
     restart: unless-stopped
     environment:
-      - PAINEL_DADOS=/dados
+      - PAINEL_DADOS=/app
       # Conexão direta com ERP Auditor (Firebird 4) — somente leitura
       - FB_HOST=192.168.100.201
       - FB_PORT=3050
@@ -18,7 +18,5 @@ services:
       - FB_PASSWORD=3@mores
       - FB_CHARSET=UTF8
       - FB_CLIENT_LIBRARY=/usr/lib/x86_64-linux-gnu/libfbclient.so.2
-    volumes:
-      - /mnt/dados-painel:/dados
     ports:
       - "8501:8501"
