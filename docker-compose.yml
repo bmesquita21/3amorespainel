@@ -16,7 +16,7 @@ services:
       - FB_DATABASE=/opt/Auditor/Dados/AUDITOR.FDB
       - FB_USER=RO_AUDITOR
       - FB_PASSWORD=3@mores
-      - FB_CHARSET=NONE
+      - FB_CHARSET=UTF8
       - FB_CLIENT_LIBRARY=/usr/lib/x86_64-linux-gnu/libfbclient.so.2
     volumes:
       - /mnt/dados-painel:/dados
