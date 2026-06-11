@@ -7,7 +7,10 @@ WORKDIR /app
 # libfbclient2 = cliente Firebird 3/4 — protocolo wire compatível com Firebird 4 server
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libfbclient2 \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && FB_SO=$(find /usr/lib -name 'libfbclient.so.*' | sort | tail -1) \
+    && [ -n "$FB_SO" ] && ln -sf "$FB_SO" /usr/lib/libfbclient.so.2 || true \
+    && ldconfig
 
 # Dependências Python (camada cacheável — só reinstala se requirements mudar)
 COPY requirements.txt .
@@ -22,7 +25,7 @@ COPY .streamlit/ ./.streamlit/
 
 ENV PAINEL_DADOS=/dados
 # Caminho do client Firebird no Linux (Debian bookworm via libfbclient2)
-ENV FB_CLIENT_LIBRARY=libfbclient.so.2
+ENV FB_CLIENT_LIBRARY=/usr/lib/x86_64-linux-gnu/libfbclient.so.2
 
 EXPOSE 8501
 

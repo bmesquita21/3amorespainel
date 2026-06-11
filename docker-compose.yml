@@ -17,7 +17,7 @@ services:
       - FB_USER=RO_AUDITOR
       - FB_PASSWORD=3@mores
       - FB_CHARSET=WIN1252
-      - FB_CLIENT_LIBRARY=libfbclient.so.2
+      - FB_CLIENT_LIBRARY=/usr/lib/x86_64-linux-gnu/libfbclient.so.2
     volumes:
       - /mnt/dados-painel:/dados
     expose:
