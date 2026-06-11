@@ -41,7 +41,7 @@ def carregar(base):
     cfg = C.load(os.path.join(base, "config"))
     return _CD.carregar_com_cache(base, lambda: I.load_all(base, cfg))
 
-@st.cache_data(show_spinner="Conectando ao banco de dados (Firebird)...")
+@st.cache_data(show_spinner="Conectando ao banco de dados (Firebird)...", ttl=1800)
 def carregar_do_banco(base):
     cfg = C.load(os.path.join(base, "config"))
     return _IDB.load_all_db(cfg)

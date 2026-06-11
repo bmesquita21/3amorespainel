@@ -21,6 +21,7 @@ import datetime
 import decimal
 import pandas as pd
 import brutils as B
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from db import get_conn
 
 _QUITADO = {2}
@@ -386,19 +387,34 @@ def ingest_racao_db(conn=None) -> pd.DataFrame:
 # ─── Ponto de entrada ────────────────────────────────────────────────────────
 
 def load_all_db(cfg, conn=None) -> dict:
-    """Carrega todos os dados do BD e retorna o mesmo dict que ingest.load_all()."""
-    close = conn is None
-    if conn is None:
-        conn = get_conn()
-    try:
-        desp   = ingest_despesa_db(cfg, conn)
-        rec    = ingest_receita_db(cfg, conn)
-        est    = ingest_racao_db(conn)
-        fc_sai = ingest_fc_saidas_db(cfg, conn)
-        fc_ent = ingest_fc_entradas_db(conn)
-    finally:
-        if close:
-            conn.close()
+    """Carrega todos os dados do BD em paralelo (5 conexões independentes)."""
+
+    def _run(fn, *args):
+        c = get_conn()
+        try:
+            return fn(*args, conn=c)
+        finally:
+            c.close()
+
+    tasks = {
+        "despesa":     (ingest_despesa_db,    cfg),
+        "receita":     (ingest_receita_db,    cfg),
+        "racao":       (ingest_racao_db,       ),
+        "fc_saidas":   (ingest_fc_saidas_db,  cfg),
+        "fc_entradas": (ingest_fc_entradas_db, ),
+    }
+
+    results = {}
+    with ThreadPoolExecutor(max_workers=5) as ex:
+        futures = {ex.submit(_run, fn, *args): key for key, (fn, *args) in tasks.items()}
+        for future in as_completed(futures):
+            results[futures[future]] = future.result()
+
+    desp   = results["despesa"]
+    rec    = results["receita"]
+    est    = results["racao"]
+    fc_sai = results["fc_saidas"]
+    fc_ent = results["fc_entradas"]
 
     rac  = est[est.fase.isin(["POSTURA", "RECRIA"])].copy() if len(est) else est
     prod = est[est.fase == "OVOS"].copy() if len(est) else est
