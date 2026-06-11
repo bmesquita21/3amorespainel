@@ -20,11 +20,5 @@ services:
       - FB_CLIENT_LIBRARY=/usr/lib/x86_64-linux-gnu/libfbclient.so.2
     volumes:
       - /mnt/dados-painel:/dados
-    expose:
-      - "8501"
-    networks:
-      - npm-network
-
-networks:
-  npm-network:
-    external: true
+    ports:
+      - "8501:8501"
