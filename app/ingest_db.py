@@ -50,6 +50,18 @@ def _query(conn, sql: str) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=cols)
 
 
+def _str(val) -> str:
+    """Converte valor do DB para str, tratando None e NaN do pandas."""
+    if val is None:
+        return ""
+    try:
+        if pd.isna(val):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    return str(val).strip()
+
+
 def _to_date(val):
     if val is None:
         return None
@@ -115,17 +127,16 @@ def ingest_despesa_db(cfg, conn=None) -> pd.DataFrame:
             continue
 
         # Conta: usa TITULO; fallback: TIPO_PGTO (ex: "13SL - DÉCIMO TERCEIRO SALÁRIO")
-        conta_raw = (r["CONTA"] or "").strip()
+        conta_raw = _str(r["CONTA"])
         if not conta_raw:
-            tipo_pgto = (r["TIPO_PGTO"] or "").strip()
-            # Remove prefixo numérico "1234 - DESCRICAO" → "DESCRICAO"
+            tipo_pgto = _str(r["TIPO_PGTO"])
             if " - " in tipo_pgto:
                 conta_raw = tipo_pgto.split(" - ", 1)[1].strip()
             else:
                 conta_raw = tipo_pgto
 
-        cc   = (r["CC"]     or "").strip()
-        cred = (r["CREDOR"] or "").strip()
+        cc   = _str(r["CC"])
+        cred = _str(r["CREDOR"])
         pago = int(r["SITUACAO"]) in _QUITADO
 
         cu, ccu = conta_raw.upper(), cc.upper()
@@ -208,8 +219,8 @@ def ingest_receita_db(cfg, conn=None) -> pd.DataFrame:
         if d is None:
             continue
         val  = float(r["VALOR"] or 0)
-        prod = (r["PRODUTO"] or "").strip()
-        cli  = (r["CLIENTE"] or "").strip()
+        prod = _str(r["PRODUTO"])
+        cli  = _str(r["CLIENTE"])
 
         info = cfg.prod2.get(prod)
         if not info:
@@ -267,12 +278,12 @@ def ingest_fc_saidas_db(cfg, conn=None) -> pd.DataFrame:
         if d is None:
             continue
         val   = float(r["VALOR"] or 0)
-        conta = (r["CONTA"] or "").strip()
+        conta = _str(r["CONTA"])
         if not conta:
-            tipo_pgto = (r["TIPO_PGTO"] or "")
-            conta = tipo_pgto.split(" - ", 1)[-1].strip() if " - " in tipo_pgto else tipo_pgto.strip()
-        cc   = (r["CC"]     or "").strip()
-        cred = (r["CREDOR"] or "").strip()
+            tipo_pgto = _str(r["TIPO_PGTO"])
+            conta = tipo_pgto.split(" - ", 1)[-1].strip() if " - " in tipo_pgto else tipo_pgto
+        cc   = _str(r["CC"])
+        cred = _str(r["CREDOR"])
         rows.append(dict(
             periodo=B.period(d), ano=d.year, mes=d.month, data=d,
             conta=conta or "(sem conta)", cc=cc or "(sem CC)", credor=cred, valor=val,
@@ -311,7 +322,7 @@ def ingest_fc_entradas_db(conn=None) -> pd.DataFrame:
         val = float(r["VALOR"] or 0)
         rows.append(dict(
             periodo=B.period(d), ano=d.year, mes=d.month, data=d,
-            produto="", cliente=(r["CLIENTE"] or "").strip(),
+            produto="", cliente=_str(r["CLIENTE"]),
             valor=val, categoria="Operacional",
         ))
     return pd.DataFrame(rows)
@@ -347,7 +358,7 @@ def ingest_racao_db(conn=None) -> pd.DataFrame:
         d = _to_date(r["DATA_MOV"])
         if d is None:
             continue
-        desc = (r["DESCRICAO"] or "").strip()
+        desc = _str(r["DESCRICAO"])
         du = desc.upper()
         if "OVOS" in du:
             fase = "OVOS"
@@ -364,7 +375,7 @@ def ingest_racao_db(conn=None) -> pd.DataFrame:
         rows.append(dict(
             periodo=B.period(d), ano=d.year, mes=d.month, data=d,
             descricao=desc,
-            galpao=(r["ALMOXARIFADO"] or "").strip(),
+            galpao=_str(r["ALMOXARIFADO"]),
             fase=fase,
             qtd=float(r["QTD_ENTRADA"] or 0),
             custo=0.0,
