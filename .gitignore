@@ -1,0 +1,61 @@
+# ============================================================
+#  .gitignore — Painel Financeiro 3 Amores
+#  REGRA DE OURO: dados bancários/financeiros e SENHAS nunca vão pro GitHub.
+#  Vai pro repo: CÓDIGO (app/, tools/) + de-para (config/config_*.csv) + docs.
+#  NÃO vai (fica na pasta SMB do servidor): planilhas, extratos, senhas, correções.
+# ============================================================
+
+# --- SEGREDOS (jamais versionar) ---
+config/usuarios.yaml
+.streamlit/secrets.toml
+.env
+
+# --- NODE (exploração DB) ---
+node_modules/
+package.json
+package-lock.json
+
+# --- CORREÇÕES / CLASSIFICAÇÕES da Sabrina (dados de uso → SMB) ---
+config/correcoes_classificacao.csv
+creditos_outros_classificado.xlsx
+creditos_outros_para_classificar.xlsx
+creditos_outros*.xlsx
+
+# --- DADOS: planilhas e extratos (ficam na pasta SMB, fora do git) ---
+/0 COMPOSI*/
+/1.1 FLUXO*/
+/1.2 FLUXO*/
+/1.3 EXTRATO/
+/2.1 DRE*/
+/2.2 DRE*/
+/3 LEVANTAMENTO*/
+/4 PRODUTOS*/
+/RECRIA*/
+# extratos e planilhas soltos
+*.pdf
+*.PDF
+
+# --- SAÍDAS GERADAS (Excel/PDF do próprio painel) ---
+/Relatorio_3Amores*.pdf
+/Painel_3Amores*.xlsx
+
+# --- PYTHON / AMBIENTE ---
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+.python-version
+
+# --- SISTEMA / EDITOR / CLAUDE ---
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+.claude/
+
+# --- PLANILHAS AVULSAS NA RAIZ (de-para / análises) ---
+De-Para*.xlsx
+*.xlsb

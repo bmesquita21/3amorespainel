@@ -1,0 +1,250 @@
+# PROMPT PARA O CLAUDE CODE — Painel de Análise Financeira (Granja de Poedeiras "3 Amores")
+
+> **Como usar:** abra o Claude Code na pasta do projeto e cole este arquivo (ou diga "leia o PROMPT_PAINEL_FINANCEIRO_GRANJA.md e comece pela Fase 0"). O protótipo `DRE_GRANJA_DASHBOARD.html` deve ser colocado na pasta do projeto — ele contém lógica de domínio que será **reaproveitada**, não descartada.
+
+---
+
+## 1. CONTEXTO DO NEGÓCIO
+
+Empresa do agronegócio cuja atividade principal é **criação de galinhas poedeiras para comercialização de ovos** (marca "Ovos 3 Amores"), com atividades secundárias de compostagem, plantação e uso particular. Há uma **Matriz (Fazenda)** e uma **Filial (Silveira)**, com vários galpões.
+
+**Objetivo do sócio:** decidir se o negócio é rentável/sustentável — ele já cogitou vender. A consultoria precisa entregar um painel que produza, por período selecionável, três peças que se conversam:
+
+1. **DRE (regime de competência)** → diz se o negócio dá lucro / é sustentável.
+2. **Fluxo de Caixa (dois cenários)** → Extrato bancário vs. Relatório do sistema, mesma estrutura, com reconciliação.
+3. **Balanço Patrimonial (BP)** → o que a empresa tem (ativo), o que deve (passivo) e o que sobra para os sócios (PL), mais os indicadores de retorno e estrutura.
+
+**Foco desta fase do projeto (gerencial):** o que importa agora é entender **em que pé estão as coisas hoje** — se a operação atual dá resultado e se é sustentável. A análise é **gerencial**, não fiscal/societária.
+
+**Sequenciamento (importante):** cada peça (DRE, FC, BP) deve ser **construída e conferida de forma independente** primeiro. O amarrar uma peça na outra — fechar `Ativo = Passivo + PL`, usar a reconciliação do caixa como validação cruzada, conferir que o Lucro Líquido da DRE bate com Lucros Acumulados no PL — é uma **fase posterior**, só depois que tudo estiver criado e validado isoladamente. Não trave o desenvolvimento de uma peça esperando a integração das outras. O princípio `Ativo = Passivo + PL` continua sendo a referência conceitual, mas a conciliação cruzada não é pré-requisito agora.
+
+---
+
+## 2. DECISÃO DE STACK (escolher ANTES de começar)
+
+**Recomendado: Python + Streamlit**, porque o requisito é "apontar para uma pasta → clicar em Atualizar → selecionar período → analisar", e porque precisamos de módulo de estoque, dois fluxos de caixa e BP — pesado demais para JS puro.
+
+- Ler **todos** os `.xlsx` de uma pasta configurável (não arquivo a arquivo).
+- De‑para (mapeamentos) como **planilhas/CSV editáveis** fora do código → o sócio/consultor edita e recalcula sem mexer em código.
+- App multipágina: `DRE`, `Estoque`, `Fluxo de Caixa`, `Balanço Patrimonial`, `Indicadores`, `Configurações`.
+- Entregar um **atalho de um clique** (`iniciar.bat` no Windows / `iniciar.command` no Mac) que sobe o Streamlit e abre o navegador, para o sócio não precisar de terminal.
+- Exportar cada peça para Excel e um PDF consolidado.
+
+**Alternativa (se preferir não instalar Python):** evoluir o próprio `DRE_GRANJA_DASHBOARD.html` usando a File System Access API (`showDirectoryPicker`) para ler a pasta. Funciona só em navegadores Chromium e fica complexo para estoque/BP — use apenas se houver restrição real para Python.
+
+> **Claude Code: confirme a stack com o usuário antes de gerar código.** O resto deste documento é independente de stack.
+
+---
+
+## 3. PRINCÍPIOS CONTÁBEIS INEGOCIÁVEIS
+
+Estes são os pontos onde o protótipo atual erra ou é incompleto. **Implemente exatamente assim:**
+
+### 3.1. Competência ≠ Caixa (datas diferentes para peças diferentes)
+- **DRE** usa **data de competência** (emissão da venda / entrada da despesa).
+- **Fluxo de Caixa (sistema)** usa **data de pagamento / recebimento**.
+- Os dados de origem têm **as duas datas** (o usuário confirmou: "desembolso por data de entrada (competência) e por data de pagamento; faturamento por data de emissão (competência) e recebimento"). Leia e preserve ambas as datas em cada lançamento.
+
+### 3.2. Estoque e CMV por CONSUMO (o erro central a corrigir)
+O protótipo hoje joga **compra/pagamento** direto em CMV (ex.: compra de milho → `CMV_MILHO`). **Isso está errado para a DRE por competência.** Correção:
+
+- Toda conta/centro de custo marcado como **inventariável** (ração e seus insumos: milho, soja, núcleo; embalagens/almoxarifado; insumos de alojamento) → a **compra entra no Estoque (Ativo do BP)**, não na DRE.
+- O **consumo do mês** é o que vira **CMV na DRE**.
+- Fórmula por item: `CMV_item = Estoque_inicial + Compras_mês − Estoque_final`. Use **custo médio ponderado** para valorizar.
+- Fonte preferencial do consumo: o relatório de **movimentação de estoque** (saídas valorizadas). Se a movimentação não cobrir tudo, caia para a fórmula EI+Compras−EF.
+- Contas marcadas como **despesa direta** (energia, mão de obra, frete, etc.) continuam batendo na DRE no mês de competência, sem passar por estoque.
+- **Atenção ao caso específico:** ração é *produzida internamente* (milho + soja + núcleo viram ração, que é consumida pelas aves) e embalagem vai para produto acabado. Trate a fábrica de ração e o almoxarifado como estoques que entram (compras) e saem (consumo das aves / uso em produto acabado).
+
+### 3.3. CAPEX nunca entra na DRE como despesa
+- O protótipo já separa CAPEX (`CAPEX_REFBENF`, `CAPEX_IMOB`, `CAPEX_OUTROS`) — manter.
+- CAPEX vira **Imobilizado (Ativo Não Circulante)** no BP e gera **depreciação**, que aí sim é despesa na DRE ao longo da vida útil.
+
+### 3.4. Ativo biológico — as poedeiras (o processo correto, parametrizável)
+A poedeira é um **ativo que produz** (como uma máquina), não uma despesa. O custo de criá-la tem que ser "casado" com os ovos que ela bota (competência aplicada ao plantel) — é o que revela a rentabilidade real. **Três fases:**
+
+**Fase 1 — Recria (formação do ativo):** da pintainha de 1 dia até começar a botar (~16–18 semanas, ~4 meses). Todos os custos dessa fase **não viram despesa**; acumulam como *valor do lote em formação* (Ativo): custo das pintainhas, ração consumida na recria, vacinas/medicamentos, mão de obra do galpão de recria, energia proporcional. No de‑para isso é o centro de custo **"Galpão Recria"** — esses custos saem da DRE e passam a se acumular.
+
+**Fase 2 — Postura (amortização do ativo):** quando o lote começa a botar (~18 até ~72–80 semanas → ~12–14 meses de produção), o custo acumulado da recria é **amortizado** mês a mês, batendo no custo do ovo. Dois métodos (deixar selecionável):
+- *Linear (PADRÃO — sem dependência de dado de produção):* custo total da recria ÷ nº de meses de postura.
+- *Por produção (opcional, mais preciso):* custo total da recria ÷ dúzias totais esperadas, amortizado pelas dúzias botadas no mês. **Só usar se o volume de produção já estiver disponível; caso contrário, usar o linear.** Não bloquear o financeiro esperando esse dado.
+Os custos correntes do galpão de postura (ração, mão de obra, medicamento do dia a dia) seguem como CMV normal por consumo (§3.2).
+
+**Fase 3 — Descarte:** no fim do ciclo a galinha é vendida para abate; valor contábil residual vs. preço de venda = ganho/perda.
+
+**Implementação:** módulo parametrizável que precisa de — data de entrada do lote na recria, data de início de postura, duração esperada da postura (meses), nº de aves por lote. Se não houver controle de lote organizado, **começar com estimativa parametrizada** (ex.: linear em 13 meses) e refinar depois. Deixar o tratamento **ligável/desligável** para o sócio comparar "com" e "sem". **Por que importa:** sem isso, meses formando lote novo parecem desastre e meses de postura parecem ótimos — distorce totalmente a leitura de "dá resultado ou não".
+
+**Caso concreto atual (rastreamento de lote):** hoje existe **um único lote**. O histórico de custos de recria dele está na pasta **`RECRIA HISTÓRICO`** (acumular tudo dela como custo de formação desse lote). Esse lote **já saiu da recria e foi para o galpão GS02 = "Galpão 2 Silveira"**, que pertence ao **grupo Silveira / FILIAL**. Portanto:
+- O custo acumulado em `RECRIA HISTÓRICO` (fase de formação, na Matriz) é o valor do ativo biológico desse lote.
+- A **amortização mensal desse custo deve ser lançada contra o GS02 (Galpão 2 Silveira, FILIAL)** — o galpão onde o lote agora bota —, e **não** contra a Matriz/recria. Assim, ao filtrar por grupo, a rentabilidade do GS02/Silveira já carrega o custo da galinha que ela recebeu, e a recria da Matriz não aparece como prejuízo puro.
+- Modele isso de forma **generalizável** (via `config_lotes.csv`, §5.8): quando surgirem novos lotes, basta cadastrar o lote, sua pasta/centro de custo de recria e o galpão de postura de destino.
+
+### 3.5. Depreciação e resultado financeiro (faltam no protótipo)
+- O protótipo para em "EBITDA − impostos". Faltam **depreciação** (do levantamento de ativos) e **despesas/receitas financeiras** (juros, tarifas) — desde que existam como contas nos relatórios.
+- Estrutura da DRE: `... → EBITDA → (−) Depreciação/Amortização → EBIT → (±) Resultado Financeiro → LAIR → (−) IRPJ/CSLL → Lucro Líquido`.
+- **Resultado financeiro e impostos vêm das contas reais dos relatórios, nunca calculados** (ver §3.6).
+
+### 3.6. Impostos e deduções — PUXAR DOS RELATÓRIOS, nunca arbitrar
+- **Regra dura:** o sistema **não calcula imposto por alíquota**. Ele **puxa o valor real das contas de imposto** que já existem nos relatórios da empresa (ICMS, ISS, PIS, COFINS, IRPJ, CSLL e quaisquer outras), exatamente como foram lançadas/pagas.
+- O protótipo cravava PIS 0,65% / COFINS 3% e calculava — **remover esse cálculo**. Cada linha de imposto na DRE = soma dos lançamentos da conta correspondente no período.
+- Se uma conta de imposto esperada não aparecer nos relatórios (ex.: nenhum PIS/COFINS lançado), **mostrar a linha zerada e sinalizar** "sem lançamentos no período" — não inventar valor nem aplicar percentual.
+
+### 3.6.1. A cascata tem que ser FAMILIAR (preservar o plano de contas atual)
+- O sistema deve **realocar e agrupar** os valores em grupos gerenciais (Faturamento, CMV, Despesas Operacionais, etc.), **mas mantendo o nome da conta original do sistema na ponta da cascata**.
+- Hierarquia da cascata: `Grupo gerencial → Subgrupo → Conta original do sistema (nome exato que ele já conhece) → lançamentos`. Ao abrir/expandir, embaixo aparece a conta como ela existe hoje no sistema — nada renomeado de forma irreconhecível.
+- Os agrupamentos gerenciais são **camadas por cima**; a rastreabilidade até a conta original e o lançamento individual é obrigatória.
+- **Quando uma conta não tiver destino óbvio no agrupamento, o sistema PARA e pergunta ao usuário** (não joga em "outros" silenciosamente). Liste as contas não mapeadas para decisão manual.
+
+### 3.7. Aportes de parceiros e infra da Omega Construtora
+- **Decisão tomada:** os aportes de parceiros entram como **Contas a Pagar (Passivo Circulante)** — a obra/aquisição foi feita, mas **ainda não foi paga**.
+- No `config_ativos.csv` (§5.5), a classificação default desses itens é `CONTA_PAGAR`. O item entra no **Imobilizado (Ativo)** e, simultaneamente, gera a obrigação em **Fornecedores/Contas a Pagar (Passivo)**. Quando for pago, baixa o passivo contra o caixa.
+- Manter a coluna de classificação editável caso algum item futuro seja tratado como PL ou financiamento, mas o default agora é `CONTA_PAGAR`.
+
+### 3.8. ESCOPO: este prompt é SÓ financeiro
+Este projeto entrega **apenas o painel financeiro** (DRE, Fluxo de Caixa, BP, Indicadores). Toda análise **operacional/zootécnica dos aviários** está **fora deste prompt** — ela tem um prompt e um app próprios (`PROMPT_PAINEL_OPERACIONAL_GRANJA.md`), construídos só depois que o financeiro estiver concluído e conferido. Os dois são **apps separados que leem a mesma pasta de dados**; o financeiro **fecha sozinho**, sem depender de nenhum dado de aviário.
+
+**Ração via relatório de PRODUTOS PRODUZIDOS:** a ração é produzida internamente e consumida — é insumo de estoque, dado de custo. O consumo de ração para o CMV (§3.2) vem do **relatório de produtos produzidos**, não do relatório de aviário. Assim o estoque/CMV fica completo sem dependência operacional.
+---
+
+## 4. DADOS DE ENTRADA (o que o usuário já tem)
+
+Crie leitores robustos para cada fonte. **Antes de codar os parsers, peça arquivos-exemplo e confirme o layout real de colunas** (o protótipo usou índices fixos que podem não cobrir as novas colunas de data de pagamento/recebimento).
+
+| Fonte | Conteúdo | Datas que traz | Uso |
+|---|---|---|---|
+| Contas a Pagar (aba `DadosDetalhados`) | Desembolsos por conta e centro de custo | Competência **e** pagamento | DRE (competência) + FC‑Sistema (pagamento) + Estoque (entradas) |
+| Faturamento (aba `Base Vendas`) | Vendas por produto, matriz/filial | Emissão **e** recebimento | DRE (emissão) + FC‑Sistema (recebimento) + Contas a Receber |
+| Movimentação de Estoque | Entradas/saídas por item e CC | Data do movimento | CMV por consumo + saldo de Estoque no BP |
+| Extratos bancários (por conta) | Créditos/débitos reais | Data do lançamento | FC‑Extrato + saldo de Caixa no BP |
+| Levantamento de Ativos | Equipamentos/maquinário (3 Amores, parceiros) + infra Omega | Data de aquisição | Imobilizado, depreciação, contrapartida em Contas a Pagar (parceiros/Omega) |
+| Composição dos produtos | Receita técnica dos produtos | — | Apoio ao custeio/consumo |
+| De‑para de Centros de Custo | Lista oficial + como cada CC é considerado | — | Vira arquivo de configuração (ver §5) |
+| Pasta `RECRIA HISTÓRICO` | Histórico de custos de recria do lote atual | Datas dos lançamentos | Valor do ativo biológico em formação → amortização lançada no GS02/Silveira (§3.4) |
+| Relatório de Produtos Produzidos | Produção interna (inclui ração produzida e consumida) | Data de produção | Consumo de ração para o CMV (§3.2) — dado de custo, não operacional |
+
+> **Fora de escopo:** relatórios de aviário (ovos produzidos, postura, mortalidade) — vão para o painel operacional, prompt separado (§3.8).
+
+**Filtros de domínio já validados no protótipo (preservar):**
+- Faturamento: considerar apenas `codnat == 13` e `situação == "R"`.
+- Contas a Pagar: contas mapeadas como `IGNORAR` (ex.: adiantamentos a fornecedores, linhas em branco) ficam fora da DRE.
+- Validação de datas: aceitar apenas 2020–2035 (evita serial Excel mal interpretado).
+- Valores em formato BR (`"R$ 1.234,56"`) → função de parse dedicada.
+
+---
+
+## 5. ARQUIVOS DE CONFIGURAÇÃO (de‑para editável — o coração do "liga e usa")
+
+Porte os mapeamentos do HTML para planilhas/CSV editáveis. Toda lógica de classificação vive **aqui**, não no código.
+
+### 5.1. `config_contas.csv` (de‑para de contas → linha da DRE)
+Origem: a constante `MAPA_CONTA` do protótipo. Colunas:
+`nome_conta | linha_dre | natureza`
+onde `natureza ∈ {INVENTARIAVEL, DESPESA_DIRETA, CAPEX, DEDUCAO, IMPOSTO, IGNORAR}`.
+> A coluna `natureza` é nova e resolve o problema do estoque (§3.2): contas `INVENTARIAVEL` entram no estoque antes de virar CMV por consumo.
+
+### 5.2. `config_centros_custo.csv` (de‑para de CC → grupo/subgrupo/detalhe)
+Origem: `NOVO_MAPA_CC` + `DETALHES_POR_GRUPO`. Colunas:
+`centro_custo | grupo | subgrupo | detalhe | inventariavel(S/N) | tipo_estoque`
+onde `tipo_estoque ∈ {RACAO, ALMOXARIFADO, EMBALAGEM, INSUMO_ALOJAMENTO, —}`.
+
+### 5.3. `config_produtos.csv` (de‑para de produto → linha de receita)
+Origem: `MAPA_OVOS` e `MAPA_PLANT`. Colunas: `categoria | tipo | linha_id | grupo`.
+
+### 5.4. `config_impostos.csv` (de‑para de CONTAS de imposto → linha de dedução/imposto da DRE — NÃO é tabela de alíquotas)
+O sistema **não calcula imposto**; ele soma os valores reais das contas de imposto dos relatórios. Este arquivo só diz **qual conta do sistema vai em qual linha** da DRE.
+Colunas: `nome_conta_imposto (como está no sistema) | linha_dre (DED_ICMS, DED_PIS, DED_COFINS, IMP_IRPJ, IMP_CSLL, OPER_TAXAS...) | tipo (DEDUCAO_RECEITA / IMPOSTO_LUCRO / TAXA_OPERACIONAL)`.
+> Nada de percentual. Se a conta existe no relatório, o valor entra; se não existe, a linha fica zerada e sinalizada (§3.6).
+
+### 5.5. `config_ativos.csv` (levantamento de ativos)
+Colunas: `item | data_aquisicao | valor | vida_util_anos | origem(PROPRIO/PARCEIRO/OMEGA) | classificacao(CONTA_PAGAR/PASSIVO/PL) | pago(S/N) | grupo_cc`. Gera depreciação (DRE+BP) e a contrapartida no Passivo. **Default para itens de PARCEIRO/OMEGA: `classificacao = CONTA_PAGAR`, `pago = N`** (feito, ainda não pago — §3.7). Coluna mantida editável caso algum item vire PL/financiamento no futuro.
+
+### 5.6. `config_layout_dre.csv` (estrutura visual da DRE)
+Origem: a constante `DRE_LAYOUT`. Mantém seções, subtotais, detalhes, totais, linhas de lucro e CAPEX. Permite reordenar/renomear sem tocar no código.
+
+### 5.7. `config_geral.yaml`
+Caminho da pasta de dados, mês de virada de estoque, ciclo de amortização do ativo biológico, flag "tratar recria como ativo biológico (S/N)", método de custeio (média ponderada).
+
+### 5.8. `config_lotes.csv` (rastreamento de lotes do plantel — ativo biológico)
+Mapeia cada lote de poedeiras da formação (recria) ao galpão onde bota, para amortizar o custo no lugar certo (§3.4). Colunas:
+`lote_id | fonte_recria (pasta/centro de custo de origem dos custos) | data_entrada_recria | data_inicio_postura | galpao_postura | grupo_galpao | n_aves | ciclo_postura_meses | metodo_amortizacao(LINEAR/PRODUCAO)`.
+**Cadastro inicial (lote atual):** `fonte_recria = RECRIA HISTÓRICO`, `galpao_postura = Galpão 2 Silveira (GS02)`, `grupo_galpao = OVOS_3AMORES/FILIAL`. Datas e nº de aves a confirmar com o usuário. Estrutura preparada para receber novos lotes apenas adicionando linhas.
+
+---
+
+## 6. MÓDULOS A CONSTRUIR
+
+### Módulo 1 — DRE (competência)
+Porte o `DRE_LAYOUT`, KPIs (Faturamento, Lucro Bruto, EBITDA, Lucro Líquido) e a visão **Comparativo Mensal** (uma coluna R$/% por mês + Total + Média) do protótipo. **Correções obrigatórias:** (a) CMV por consumo (§3.2); (b) adicionar Depreciação→EBIT e Resultado Financeiro→Lucro Líquido (§3.5); (c) **impostos puxados das contas reais dos relatórios, sem cálculo por alíquota** (§3.6); (d) **cascata familiar** — ao expandir qualquer grupo, mostrar a conta original do sistema na ponta (§3.6.1). Filtros: período (mês/ano/acumulado), grupo, detalhe (igual ao protótipo).
+
+### Módulo 2 — Estoque (pré-requisito da DRE)
+Para cada item inventariável e cada mês: `EI + Compras − Consumo = EF`, valorização por média ponderada. Saída: tabela de saldos (alimenta o BP) e o **CMV por consumo** (alimenta a DRE). Mostrar uma tela de conferência (compras do mês vs. consumo do mês vs. saldo) para o sócio enxergar a diferença que ele mesmo levantou.
+
+### Módulo 3 — Fluxo de Caixa (2 cenários + reconciliação)
+Mesma estrutura nos dois, dividida em **Operacional / Investimento / Financiamento**:
+- **FC‑Extrato:** dos extratos bancários (movimento real).
+- **FC‑Sistema:** dos relatórios, por data de **pagamento** (despesas) e **recebimento** (receitas).
+- **Relatório de Reconciliação:** `ΔCaixa(extrato) − ΔCaixa(sistema)`, listando divergências (tarifas/juros que só estão no banco, lançamentos no sistema ainda não compensados, etc.). É um controle poderoso de saúde dos dados.
+
+### Módulo 4 — Balanço Patrimonial
+- **Ativo Circulante:** Caixa (saldo final do FC), Contas a Receber (faturado emitido − recebido), **Estoques** (saldo do Módulo 2), tributos a recuperar.
+- **Ativo Não Circulante:** Imobilizado (config_ativos − depreciação acumulada), **Ativo Biológico** (poedeiras, se ligado).
+- **Passivo Circulante:** Fornecedores (a pagar competência − pago), **aportes de parceiros/Omega não pagos** (§3.7), salários/encargos, tributos a recolher.
+- **Passivo Não Circulante:** empréstimos/financiamentos LP (se houver).
+- **PL:** Capital Social integralizado, **Lucros/Prejuízos Acumulados** (= soma dos Lucros Líquidos da DRE).
+- **Trava de fechamento (validação de fase posterior):** calcule e mostre `Ativo − (Passivo + PL)`. Nesta fase gerencial, **não force o balanço a fechar**; exiba a diferença como "Diferença a investigar" (lacuna de dados a resolver depois). Formato T (Ativo à esquerda; Passivo+PL à direita).
+
+### Módulo 5 — Indicadores (DRE × BP)
+`ROE = LL ÷ PL` · `ROIC = NOPAT ÷ (PL + Dívida onerosa)` · `ROCE = EBIT ÷ (Ativo Total − Passivo Circulante)` · `Endividamento = Passivo Total ÷ PL` · `Liquidez Corrente = AC ÷ PC`. Mostrar evolução mês a mês e um **veredito** ("rentável / no break-even / deficitário") com as 3 alavancas que mais pesam no período.
+
+### Módulo 6 — UX / Workflow
+Tela inicial: campo do caminho da pasta + botão **Atualizar** (relê tudo). Seletor de período global. Abas dos módulos. Cada tabela exportável (Excel); botão "Gerar relatório PDF consolidado". Persistir o último caminho usado.
+
+---
+
+## 7. PLANO EM FASES (passo a passo)
+
+> **Foco gerencial:** cada peça é construída e conferida **isoladamente** primeiro. A integração entre peças (fechar `A = P + PL`, conciliação cruzada DRE↔BP↔FC) é a **última fase**, só depois de tudo criado e validado.
+
+- **Fase 0 — Setup e amostras.** Confirmar stack (§2). Coletar 1 arquivo-exemplo de **cada** fonte (§4) e confirmar layout real de colunas, incluindo onde estão as **contas de imposto** e as **duas datas**. Criar estrutura de pastas e os arquivos de config (§5) já populados a partir das constantes do HTML.
+- **Fase 1 — Ingestão.** Parsers robustos para cada fonte, com as duas datas (competência e pagamento/recebimento), parse de valor BR, validação de datas e a **cascata familiar** preservando a conta original (§3.6.1). Tela "Atualizar pasta". Listar contas não mapeadas e **perguntar** ao usuário.
+- **Fase 2 — Estoque (Módulo 2).** Consumo/EI‑EF/média ponderada e tela de conferência. **Pré-requisito da DRE correta.**
+- **Fase 3 — DRE (Módulo 1) — PRIORIDADE.** É a peça que responde "dá resultado / é sustentável". Portar layout + comparativo do HTML, plugar o CMV por consumo da Fase 2, impostos puxados das contas reais (§3.6), depreciação e resultado financeiro das contas reais. Validar contra o protótipo e **explicar cada diferença** (vêm da correção do estoque e dos impostos reais).
+- **Fase 4 — Fluxo de Caixa (Módulo 3).** Os dois cenários, cada um conferido sozinho. (A reconciliação entre eles pode entrar aqui como conferência do próprio FC.)
+- **Fase 5 — Balanço (Módulo 4) + Indicadores (Módulo 5).** Montar cada lado do BP, calcular indicadores e o veredito gerencial. Mostrar a diferença de fechamento **sem forçar**.
+- **Fase 6 — Ativo biológico (§3.4) + Empacotamento.** Ligar o tratamento de recria (parametrizável, com/sem), atalho de um clique, exportações Excel/PDF.
+- **Fase 7 (segundo momento) — Integração e conciliação cruzada.** Amarrar as peças: LL da DRE → Lucros Acumulados; ΔCaixa = resultado do FC; fechar `A = P + PL`. Só após tudo conferido.
+
+> **Painel operacional = projeto separado e posterior.** Só começa depois que o financeiro estiver concluído e validado. Terá prompt próprio e será um app independente lendo a mesma pasta (§3.8).
+
+Implemente uma fase por vez, validando os números com o usuário antes de avançar.
+
+---
+
+## 8. PERGUNTAS QUE VOCÊ (CLAUDE CODE) DEVE FAZER ANTES DE CODAR
+
+**Já decidido (não perguntar de novo):**
+- Impostos: **puxar das contas reais dos relatórios, nunca calcular por alíquota** (§3.6).
+- Cascata: **preservar a conta original do sistema na ponta** (§3.6.1).
+- Aportes de parceiros/Omega: **Contas a Pagar, ainda não pagos** (§3.7).
+- Foco: **gerencial**; integração entre peças é fase posterior.
+- Recria: **tratar como ativo biológico amortizável, parametrizável e ligável/desligável** (§3.4).
+
+**Ainda em aberto — perguntar:**
+1. Stack: Streamlit (recomendado) ou evoluir o HTML?
+2. Pode enviar 1 arquivo-exemplo de cada fonte (§4) para confirmar colunas, as duas datas e os nomes das contas de imposto?
+3. Dados do **lote atual** (ativo biológico): a pasta `RECRIA HISTÓRICO` tem os custos de recria; o lote já foi para o **GS02 (Galpão 2 Silveira)**. Confirmar: data de entrada na recria, data de início de postura no GS02, nº de aves e ciclo de postura estimado (ex.: 13 meses).
+4. Existe estoque inicial conhecido na data de início, ou começamos do zero e construímos o saldo pelas compras?
+5. Há empréstimos/financiamentos com juros lançados? (para Resultado Financeiro na DRE e Passivo no BP — sempre puxando das contas reais)
+6. Sempre que uma conta do relatório não tiver destino claro no agrupamento, **pergunte** em vez de chutar.
+
+---
+
+## 9. REGRAS DE ENGENHARIA
+
+- Toda regra de negócio (mapeamentos, vidas úteis, ciclos) vive em **config**, nunca hardcoded.
+- **Imposto e qualquer valor fiscal/financeiro: somar das contas reais dos relatórios. Nunca calcular por percentual.**
+- A cascata sempre permite chegar à **conta original do sistema** e ao lançamento individual (rastreabilidade total).
+- **Na dúvida, pergunte ao usuário** — conta sem destino claro nunca vai para "outros" silenciosamente.
+- Nunca confunda data de competência com data de caixa — separe sempre nas duas pontas.
+- Quando faltar dado, **mostre a lacuna** (linha "a investigar") em vez de forçar o resultado a fechar.
+- Reaproveite a lógica de domínio do `DRE_GRANJA_DASHBOARD.html` (filtros codnat/situação, parse BR, validação de datas, de‑para de contas e CC, layout da DRE) — não reinvente.
+

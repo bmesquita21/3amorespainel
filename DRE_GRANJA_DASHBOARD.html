@@ -1,0 +1,1241 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>DRE Granja Poedeiras — Dashboard Interativo</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --primary: #1565C0;
+    --primary-dark: #0D47A1;
+    --secondary: #6A1B9A;
+    --success: #2E7D32;
+    --danger: #C62828;
+    --warning: #EF6C00;
+    --bg: #F5F7FA;
+    --surface: #FFFFFF;
+    --border: #E0E4E8;
+    --text: #1A1A1A;
+    --text-light: #666;
+    --text-very-light: #999;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg); color: var(--text); padding: 20px; min-height: 100vh;
+  }
+  .container { max-width: 1400px; margin: 0 auto; }
+  header {
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    color: white; padding: 20px 30px; border-radius: 12px; margin-bottom: 20px;
+    box-shadow: 0 4px 12px rgba(21, 101, 192, 0.2);
+  }
+  header h1 { font-size: 22px; margin-bottom: 4px; }
+  header p { opacity: 0.9; font-size: 13px; }
+  .upload-area {
+    background: var(--surface); padding: 25px; border-radius: 12px;
+    margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    border: 2px dashed var(--border); text-align: center;
+    transition: all 0.2s;
+  }
+  .upload-area.drag-over { border-color: var(--primary); background: #E3F2FD; }
+  .upload-area h2 { font-size: 16px; margin-bottom: 10px; color: var(--text); }
+  .upload-area p { color: var(--text-light); margin-bottom: 15px; font-size: 13px; }
+  .upload-btn {
+    background: var(--primary); color: white; border: none;
+    padding: 10px 24px; border-radius: 6px; font-size: 14px; font-weight: 600;
+    cursor: pointer; transition: background 0.2s;
+  }
+  .upload-btn:hover { background: var(--primary-dark); }
+  .upload-btn.secondary { background: #757575; }
+  .upload-btn.danger { background: var(--danger); }
+  .files-list {
+    background: var(--surface); padding: 15px 20px; border-radius: 12px;
+    margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  }
+  .files-list h3 { font-size: 14px; color: var(--text-light); margin-bottom: 10px; }
+  .file-chip {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: #E8F5E9; color: #1B5E20;
+    padding: 6px 12px; border-radius: 20px; font-size: 12px; margin: 3px;
+  }
+  .file-chip.faturamento { background: #E3F2FD; color: #0D47A1; }
+  .file-chip .remove {
+    background: rgba(0,0,0,0.1); border: none; border-radius: 50%;
+    width: 18px; height: 18px; cursor: pointer; font-size: 12px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .file-chip .remove:hover { background: rgba(0,0,0,0.2); }
+  .filters {
+    background: var(--surface); padding: 20px; border-radius: 12px;
+    margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px;
+  }
+  .filter-group label {
+    display: block; font-size: 11px; font-weight: 600; color: var(--text-light);
+    text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;
+  }
+  .filter-group select {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--border);
+    border-radius: 6px; font-size: 14px; background: white;
+    cursor: pointer; font-family: inherit;
+  }
+  .filter-group select:focus { outline: 2px solid var(--primary); }
+  .kpis {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+    margin-bottom: 20px;
+  }
+  .kpi {
+    background: var(--surface); padding: 18px; border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  }
+  .kpi .label {
+    font-size: 11px; font-weight: 600; color: var(--text-light);
+    text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;
+  }
+  .kpi .value {
+    font-size: 22px; font-weight: 700; color: var(--text); line-height: 1.2;
+  }
+  .kpi .value.positive { color: var(--success); }
+  .kpi .value.negative { color: var(--danger); }
+  .kpi .margin { font-size: 12px; color: var(--text-light); margin-top: 4px; }
+  .dre-table {
+    background: var(--surface); border-radius: 12px; overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  }
+  .dre-table table { width: 100%; border-collapse: collapse; }
+  .dre-table th {
+    background: var(--primary-dark); color: white; padding: 12px;
+    text-align: left; font-size: 12px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .dre-table th.value, .dre-table th.pct { text-align: right; }
+  .dre-table td {
+    padding: 8px 12px; border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .dre-table td.value { text-align: right; font-variant-numeric: tabular-nums; }
+  .dre-table td.pct {
+    text-align: right; color: var(--text-light); font-size: 11px; width: 60px;
+    font-variant-numeric: tabular-nums;
+  }
+  .dre-table tr.section td {
+    background: #F5F7FA; font-weight: 700;
+    border-top: 2px solid var(--primary); border-bottom: 1px solid var(--border);
+    color: var(--primary-dark);
+  }
+  .dre-table tr.subtotal td {
+    background: #ECEFF4; font-weight: 600;
+    border-top: 1px solid #BDBDBD;
+  }
+  .dre-table tr.total td {
+    background: var(--primary); color: white;
+    font-weight: 700; font-size: 14px;
+  }
+  .dre-table tr.total td.value { color: white; }
+  .dre-table tr.detail td:first-child { padding-left: 32px; color: var(--text-light); }
+  .dre-table tr.profit td {
+    background: #E8F5E9; font-weight: 700; color: var(--success);
+    border-top: 2px solid var(--success);
+  }
+  .dre-table tr.profit.negative td {
+    background: #FFEBEE; color: var(--danger);
+    border-top: 2px solid var(--danger);
+  }
+
+  .dre-table tr.sectiontotal td {
+    background: #FFECB3; font-weight: 700; color: #E65100;
+    border-top: 2px dashed #FF6F00; border-bottom: 2px solid #FF6F00;
+    font-size: 13px;
+  }
+  .comp-table tr.sectiontotal-row td {
+    background: #FFECB3; font-weight: 700; color: #E65100;
+    border-top: 2px dashed #FF6F00; border-bottom: 2px solid #FF6F00;
+  }
+
+  .dre-table tr.capex td {
+    background: #FFF3E0; color: var(--warning);
+    font-style: italic;
+  }
+  .empty {
+    background: var(--surface); padding: 60px 30px; border-radius: 12px;
+    text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  }
+  .empty .icon { font-size: 64px; margin-bottom: 20px; }
+  .empty h2 { margin-bottom: 10px; }
+  .empty p { color: var(--text-light); margin-bottom: 20px; }
+  .dre-scroll { max-height: 70vh; overflow-y: auto; }
+  @media (max-width: 900px) {
+    .filters { grid-template-columns: 1fr; }
+    .kpis { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  .mode-tabs {
+    display: flex; gap: 6px; margin-bottom: 16px;
+    background: var(--surface); padding: 6px; border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  }
+  .mode-tab {
+    flex: 1; padding: 12px 16px; border: none; cursor: pointer;
+    background: transparent; border-radius: 8px; font-weight: 600;
+    font-size: 14px; color: var(--text-light); transition: all 0.2s;
+    font-family: inherit;
+  }
+  .mode-tab:hover { background: #F5F7FA; }
+  .mode-tab.active { background: var(--primary); color: white; }
+  .comp-wrap {
+    background: var(--surface); border-radius: 12px; overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  }
+  .comp-scroll { max-height: 75vh; overflow: auto; }
+  .comp-table { width: 100%; border-collapse: collapse; }
+  .comp-table th {
+    background: var(--primary-dark); color: white; padding: 10px 8px;
+    font-size: 11px; text-align: right; position: sticky; top: 0; z-index: 1;
+    text-transform: uppercase; letter-spacing: 0.3px; font-weight: 600;
+    white-space: nowrap;
+  }
+  .comp-table th:first-child { text-align: left; min-width: 290px; position: sticky; left: 0; z-index: 2; }
+  .comp-table th.total-col { background: var(--secondary); }
+  .comp-table th.avg-col { background: #424242; }
+  .comp-table td {
+    padding: 6px 8px; font-size: 12px; border-bottom: 1px solid var(--border);
+    text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  .comp-table td:first-child { text-align: left; background: inherit; position: sticky; left: 0; }
+  .comp-table tr.section td {
+    background: #F5F7FA; font-weight: 700; color: var(--primary-dark);
+    border-top: 2px solid var(--primary); padding: 10px 8px;
+  }
+  .comp-table tr.subtotal-row td { background: #ECEFF4; font-weight: 600; }
+  .comp-table tr.total-row td { background: var(--primary); color: white; font-weight: 700; font-size: 13px; }
+  .comp-table tr.profit-row td { background: #E8F5E9; font-weight: 700; color: var(--success); border-top: 2px solid var(--success); }
+  .comp-table tr.profit-row.negative td { background: #FFEBEE; color: var(--danger); border-top: 2px solid var(--danger); }
+  .comp-table tr.detail-row td:first-child { padding-left: 28px; color: var(--text-light); }
+  .comp-table tr.capex-row td { background: #FFF3E0; color: var(--warning); font-style: italic; }
+  .comp-table td.month-total-cell { background-color: rgba(106, 27, 154, 0.08); font-weight: 600; }
+  .comp-table td.month-avg-cell { background-color: rgba(66, 66, 66, 0.06); font-style: italic; color: var(--text-light); }
+  .comp-table th.sub-h { font-size: 10px; padding: 6px 6px; background: var(--primary); text-transform: none; letter-spacing: 0; }
+  .comp-table th.pct-h { background: rgba(255,255,255,0.15); }
+  .comp-table td.pct-cell { color: var(--text-light); font-size: 11px; font-style: italic; width: 50px; min-width: 50px; }
+  .comp-table tr.total-row td.pct-cell { color: rgba(255,255,255,0.85); }
+  .comp-table tr.profit-row td.pct-cell { color: inherit; opacity: 0.75; }
+
+
+</style>
+</head>
+<body>
+<div class="container">
+
+<header>
+  <h1>🐔 DRE Granja Poedeiras — Dashboard Interativo</h1>
+  <p>Arraste seus relatórios .xlsx aqui. O sistema processa Faturamento + Contas a Pagar e mantém seu histórico salvo localmente.</p>
+</header>
+
+<div class="upload-area" id="dropzone">
+  <h2>📁 Carregar relatórios</h2>
+  <p>Arraste arquivos .xlsx aqui, ou clique no botão. Aceita ambos: <strong>Faturamento_*.xlsx</strong> e <strong>Relatorio_Contas_a_Pagar_*.xlsx</strong>.</p>
+  <input type="file" id="fileInput" multiple accept=".xlsx" style="display:none">
+  <button class="upload-btn" onclick="document.getElementById('fileInput').click()">⬆️ Selecionar arquivos</button>
+  <button class="upload-btn secondary" onclick="exportData()" style="margin-left:8px">💾 Exportar dados (backup)</button>
+  <button class="upload-btn danger" onclick="clearAll()" style="margin-left:8px">🗑️ Limpar tudo</button>
+</div>
+
+<div class="files-list" id="filesList" style="display:none">
+  <h3 id="filesHeader">📚 Arquivos carregados:</h3>
+  <div id="filesChips"></div>
+</div>
+
+<div id="dashboard" style="display:none">
+  <div class="mode-tabs">
+    <button class="mode-tab active" id="tabDRE" onclick="setMode('DRE')">📋 DRE (mês único)</button>
+    <button class="mode-tab" id="tabComp" onclick="setMode('COMPARATIVO')">📊 Comparativo Mensal</button>
+  </div>
+  <div class="filters">
+    <div class="filter-group">
+      <label for="filtroPeriodo">📅 Período</label>
+      <select id="filtroPeriodo" onchange="atualizaDRE()"></select>
+    </div>
+    <div class="filter-group">
+      <label for="filtroGrupo">🏢 Grupo Principal</label>
+      <select id="filtroGrupo" onchange="atualizaDetalhes(); atualizaDRE()">
+        <option value="TUDO">📊 TUDO (consolidado)</option>
+        <option value="OVOS_3AMORES">🐔 Ovos 3 Amores Geral</option>
+        <option value="COMPOSTAGEM">🌱 Compostagem</option>
+        <option value="PLANTACAO">🌾 Plantação</option>
+        <option value="PARTICULAR">👤 Particular</option>
+        <option value="OUTROS">⚙️ Outros (compartilhados)</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label for="filtroDetalhe">🎯 Detalhe (dentro do grupo)</label>
+      <select id="filtroDetalhe" onchange="atualizaDRE()">
+        <option value="TODOS">— Todos —</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="kpis">
+    <div class="kpi">
+      <div class="label">💰 Faturamento Bruto</div>
+      <div class="value" id="kpiFat">R$ 0</div>
+      <div class="margin" id="kpiFatLabel">—</div>
+    </div>
+    <div class="kpi">
+      <div class="label">📊 Lucro Bruto</div>
+      <div class="value" id="kpiLB">R$ 0</div>
+      <div class="margin" id="kpiLBmargin">Margem Bruta —</div>
+    </div>
+    <div class="kpi">
+      <div class="label">⚡ EBITDA</div>
+      <div class="value" id="kpiEBITDA">R$ 0</div>
+      <div class="margin" id="kpiEBITDAmargin">Margem EBITDA —</div>
+    </div>
+    <div class="kpi">
+      <div class="label">🏆 Lucro Líquido</div>
+      <div class="value" id="kpiLL">R$ 0</div>
+      <div class="margin" id="kpiLLmargin">Margem Líquida —</div>
+    </div>
+  </div>
+
+  <div id="viewDRE" class="dre-table">
+    <div class="dre-scroll">
+      <table id="dreTable">
+        <thead>
+          <tr>
+            <th>Descrição</th>
+            <th class="value">Valor (R$)</th>
+            <th class="pct">% Fat.</th>
+          </tr>
+        </thead>
+        <tbody id="dreBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="viewComp" class="comp-wrap" style="display:none">
+    <div class="comp-scroll">
+      <table class="comp-table" id="compTable">
+        <thead><tr id="compHeader"></tr></thead>
+        <tbody id="compBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="empty" id="emptyState">
+  <div class="icon">📂</div>
+  <h2>Nenhum relatório carregado ainda</h2>
+  <p>Arraste seus arquivos .xlsx pra cima ou clique em "Selecionar arquivos".<br>O sistema reconhece automaticamente Faturamento e Contas a Pagar.</p>
+</div>
+
+</div>
+
+<script>
+const MAPA_CONTA = {
+  'MILHO':'CMV_MILHO','FARELO DE SOJA':'CMV_SOJA',
+  'NUCLEO':'CMV_NUCLEO','MACRO INGREDIENTES':'CMV_NUCLEO','MICRO INGREDIENTES':'CMV_NUCLEO',
+  'COMPRA DE RAÇÃO PARA GALINHAS':'CMV_NUCLEO','INSUMOS E RAÇAO PARA ANIMAIS':'CMV_NUCLEO',
+  'INSUMOS PARA GRANJA':'CMV_NUCLEO',
+  'INSUMOS PARA EMBALAGEM':'CMV_EMBAL','PALLET':'CMV_EMBAL',
+  'COMPRA DE MEDICAMENTOS VETERINÁRIOS':'CMV_SAUDE',
+  'MATERIAL DE USO VETERINÁRIO E PET':'CMV_SAUDE',
+  'CONSELHO REGIONAL DE MEDICINA VETERINARIA DO ESTADO DO RIO DE JANEIRO (CRMV - RJ )':'CMV_SAUDE',
+  'ENERGIA':'CMV_ENERGIA',
+  'GÁS DE COZINHA / ENCANADO':'OPER_GAS','GAS - COZINHA':'OPER_GAS',
+  'SERVIÇOS TERCEIRIZADOS':'CMV_MOTER',
+  'SERVIÇO TERCEIRIZADO DE TRANSPORTE DE CARGA':'OPER_FRETE',
+  'UNIFORMES':'CMV_EPI','EPI - EQ. DE PROTEÇÃO INDIVIDUAL':'CMV_EPI','EPC - EQ. DE PROTEÇÃO COLETIVA':'CMV_EPI',
+  'MATERIAIS DE MANUTENÇÃO':'CMV_MANUT','PEÇAS E ACESSÓRIOS':'CMV_MANUT',
+  'SERVIÇO DE MANUTENÇÃO EM GERAL':'CMV_MANUT','SERVIÇOS DE MANUTENÇÃO PREDIAL':'CMV_MANUT',
+  'AVARIAS DE EQUIPAMENTOS LEVES LOCADOS':'CMV_MANUT',
+  'MATERIAIS DE CONSUMO PARA PRODUÇÃO':'CMV_OUTROS',
+  'FRETES DE EQUIPAMENTOS':'OPER_FRETE',
+  'MATERIAL FERTILIZANTES E DEFENSIVOS':'OPER_LAVOURA','MATERIAL AGRÍCOLA':'OPER_LAVOURA',
+  'MATERIAIS DE CONSUMO (OXIGÊNIO, ELETRODOS, PREGO,':'CMV_OUTROS',
+  'COMPRA DE PÓ DE SERRA':'CMV_OUTROS',
+  'COMPRA DE OVOS BRANCO TIPO GRANDE PARA REVENDA':'CMV_OUTROS',
+  'COMPRA DE OVOS VERMELHO TIPO GRANDE PARA REVENDA':'CMV_OUTROS',
+  'DIESEL':'OPER_DIESEL','GASOLINA':'OPER_DIESEL',
+  'FILTROS E LUBRIFICANTES':'OPER_COMBVEIC','VALE COMBUSTÍVEL':'OPER_COMBVEIC',
+  'FRETES E CARRETOS (MATERIAIS)':'OPER_FRETE','FRETE':'OPER_FRETE',
+  'SEM PARAR INSTITUICAO DE PAGAMENTO LTDA':'OPER_PEDAGIO','ESTACIONAMENTO E PEDÁGIOS':'OPER_PEDAGIO',
+  'LOCAÇÃO DE EQUIPAMENTOS PESADOS':'OPER_LOCEQ','LOCAÇÃO DE EQUIPAMENTOS LEVES':'OPER_LOCEQ',
+  'LOCAÇÃO DE VEÍCULOS DE PASSEIO':'OPER_LOCEQ',
+  'LOCAÇÃO DE CONTAINERS E BANHEIROS QUIMICOS':'OPER_RESID',
+  'COMISSAO':'OPER_COMISSAO',
+  'TRASLADO / PEDÁGIO / COMBUSTÍVEIS / REFEIÇÕES / HO':'OPER_TRASLADO',
+  'SALARIOS':'OPER_FOLHA','REMUNERAÇÃO, SALÁRIOS E ADIANTAMENTOS':'OPER_FOLHA','REMUNERAÇÃO PJ':'OPER_FOLHA',
+  'INSS S/ FOLHA DE PAGAMENTO':'OPER_ENCARGOS','FGTS S/ FOLHA DE PAGAMENTO':'OPER_ENCARGOS',
+  'GRRF (RESCISÓRIO)':'OPER_ENCARGOS','RESCISÕES':'OPER_ENCARGOS','FÉRIAS':'OPER_ENCARGOS',
+  'EMPRÉSTIMO CONSIGNADO DO TRABALHADOR':'OPER_ENCARGOS',
+  'PRÓ-LABORE':'OPER_PROLAB','ANTECIPAÇÃO DE DIVIDENDOS / RETIRADAS DE SÓCIOS':'OPER_PROLAB',
+  'SEGURO DE VIDA COLABORADORES':'OPER_SEGVIDA',
+  'VALE REFEIÇÃO':'OPER_VALEREF',
+  'MEDICINA OCUPACIONAL (ASO, PPRA, PCMSO, CIPA)':'OPER_SST',
+  'DEMAIS CONSULTORIA / ASSESSORIA':'OPER_GESTAO','CONTABILIDADE':'OPER_CONTADOR',
+  'CARTÃO CORPORATIVO TRES AMORES MATRIZ':'OPER_GESTAO','ALUGUEL':'OPER_GESTAO',
+  'INTERNET':'OPER_INTERNET','MENSALIDADES DE SOFTWARES / ERP':'OPER_ERP','SOFTWARE':'OPER_ERP',
+  'ANÁLISE E DESENVOLVIMENTO DE SOFTWARE':'OPER_ERP',
+  'INFORMÁTICA CONSUMÍVEIS (TONNERS/CARTUCHO/OUTROS)':'OPER_ERP','CERTIFICADOS DIGITAIS':'OPER_CERTDIG',
+  'SERVIÇOS DE PROPAGANDA E MARKETING':'OPER_MKT',
+  'PATROCÍNIO, BRINDES E DOAÇÕES':'OPER_PATROC',
+  'ASSINATURA DE PUBLICAÇÕES (REVISTAS,JORNAIS,OUTR)':'OPER_PATROC',
+  'COMEMORAÇÃO E CONFRATERNIZAÇÃO':'OPER_CONFRAT',
+  'REFEIÇÕES / LANCHES':'OPER_REFEI','FORNECIMENTO DE REFEIÇÕES':'OPER_REFEI',
+  'PROTEINA - COZINHA':'OPER_REFCARNE',
+  'CEREAIS - COZINHA':'OPER_REFALIM','HORTIFRUTI - COZINHA':'OPER_REFALIM',
+  'ITENS PARA CAFÉ - COZINHA':'OPER_REFALIM','DESCARTAVEIS - COZINHA':'OPER_REFALIM',
+  'UTENSILIOS - COZINHA':'OPER_REFALIM',
+  'SERVIÇO DE LIMPEZA':'OPER_LIMP','SERVIÇOS DE LIMPEZA E CONSERVAÇÃO':'OPER_LIMP',
+  'COPA / COZINHA / BANHEIRO':'OPER_LIMP',
+  'TAXAS MUNICIPAIS ( ALVARÁ, LIXO, ETC)':'OPER_TAXAS',
+  'TAXAS ESTADUAIS E CERTIDÕES':'OPER_TAXAS','TAXAS ESTADUAIS':'OPER_TAXAS',
+  'PAGAMENTO DE ISS':'OPER_TAXAS','CREA / CRQ / CRA':'OPER_TAXAS',
+  'SERVIÇOS DE LICENCIAMENTO / CERTIFICAÇÃO':'OPER_TAXAS',
+  'ESCRITÓRIO':'OPER_OUTRASFIX',
+  'APLICAÇÕES FINANCEIRAS / FUNDOS DE INVESTIMENTOS':'OPER_OUTRASFIX',
+  'ESTORNO DE CRÉDITOS INDEVIDOS':'OPER_OUTRASFIX',
+  'RV TECNOAGRO COMERCIO E REPRESENTACOES LTDA':'OPER_OUTRASFIX',
+  'ICMS':'DED_ICMS','ICMS - DIFAL':'DED_ICMS',
+  'IRPJ':'IMP_IRPJ','CSLL':'IMP_CSLL',
+  'MATERIAIS DE BENFEITORIAS EM IMÓVEIS':'CAPEX_REFBENF',
+  'SERVIÇOS DE BENFEITORIAS E IMOVEIS':'CAPEX_REFBENF',
+  'BENFEITORIA EM IMÓVEIS DE TERCEIROS - MATERIAIS':'CAPEX_REFBENF',
+  'BENFEITORIA EM IMÓVEIS DE TERCEIROS - SERVIÇOS':'CAPEX_REFBENF',
+  'BENFEITORIAS EM IMÓVEIS':'CAPEX_REFBENF',
+  'MATERIAIS DE BENFEITORIAS E MÁQ/EQUIPAMENTOS':'CAPEX_REFBENF',
+  'SERVIÇOS DE BENFEITORIAS E MÁQ/EQUIPAMENTOS':'CAPEX_REFBENF',
+  'FERRAMENTAL':'CAPEX_IMOB','MÓVEIS E UTENSÍLIOS':'CAPEX_IMOB',
+  'ELETROELETRÔNICOS E ELETRODOMÉSTICOS':'CAPEX_IMOB',
+  'EQUIPAMENTOS DE INFORMÁTICA / TELEFONIA':'CAPEX_IMOB',
+  'MATERIAIS ELÉTRICOS DE VEÍCULOS / EQUIPAMENTOS':'CAPEX_OUTROS',
+  // === CONTAS ADICIONADAS (Plano de Contas 2026 ampliado) ===
+  'EQUIPAMENTOS PESADO':'CAPEX_IMOB',
+  'DI - ENCARGOS SOCIAIS / INSS PATRONAL (28%)':'OPER_ENCARGOS',
+  'DI - ENCARGOS SOCIAIS / FGTS(8%)':'OPER_ENCARGOS',
+  'GRATIFICAÇÕES / ADICIONAIS':'OPER_FOLHA',
+  'FERIAS':'OPER_ENCARGOS',
+  'PLR - PARTICIPAÇÃO NOS LUCROS OU RESULTADOS':'OPER_ENCARGOS',
+  'VALE TRANSPORTE':'OPER_FOLHA',
+  'COMPRA DE MUDAS':'OPER_LAVOURA',
+  'IPTU':'OPER_TAXAS',
+  'CARTÓRIOS':'OPER_TAXAS',
+  'APORTE FINANCEIRO PARA OBRA':'CAPEX_REFBENF',
+  'DESPESAS ADMINISTRATIVAS - DIRETORIA':'OPER_GESTAO',
+  'COMPRA DE OVOS CAIPIRA TIPO GRANDE PARA REVENDA':'CMV_OUTROS',
+  'GRANJA SITIO SANTA BARBARA LTDA':'CMV_OUTROS',
+  'MULTAS DE TRÂNSITO':'OPER_OUTRASFIX',
+  'SERVIÇOS DE CONSULTORIA EM SOFTWARES':'OPER_ERP',
+  'SERVIÇOS DE BORRACHARIA EM GERAL':'CMV_MANUT',
+  'SERVIÇOS DE PINTURA E LANTERNAGEM':'CMV_MANUT',
+  'BEBIDAS - COZINHA':'OPER_REFALIM',
+  'TELEFONE MÓVEL':'OPER_INTERNET',
+  'TELEFONE FIXO':'OPER_INTERNET',
+  'ADIANTAMENTOS A FORNECEDORES':'IGNORAR','':'IGNORAR',
+  'CARTÃO CORPORATIVO':'OPER_GESTAO',
+};
+
+const NOVO_MAPA_CC = {
+  'ENTREPOSTO | FAZENDA': ['OVOS_3AMORES','MATRIZ','Entreposto'],
+  'SALA DE CLASSIFICAÇAO DE OVOS': ['OVOS_3AMORES','MATRIZ','Sala de Classificação'],
+  'ALMOXARIFADO TRES AMORES | FAZENDA': ['OVOS_3AMORES','MATRIZ','Almoxarifado Fazenda'],
+  'RAÇÕES TRES AMORES | FAZENDA': ['OVOS_3AMORES','MATRIZ','Ração Fazenda'],
+  'ADMINISTRAÇAO TRES AMORES | FAZENDA': ['OVOS_3AMORES','MATRIZ','Admin Fazenda'],
+  'GALPAO RECRIA | FAZENDA': ['OVOS_3AMORES','MATRIZ','Galpão Recria'],
+  'GALPAO 1 | FAZENDA': ['OVOS_3AMORES','MATRIZ','Galpão 1 Fazenda'],
+  'GALPAO 2 | FAZENDA': ['OVOS_3AMORES','MATRIZ','Galpão 2 Fazenda'],
+  'OVOS TRES AMORES | FAZENDA': ['OVOS_3AMORES','MATRIZ','Ovos Fazenda'],
+  'ALMOXARIFADO | SILVEIRA': ['OVOS_3AMORES','FILIAL','Almoxarifado Silveira'],
+  'ADMINISTRACAO | SILVEIRA': ['OVOS_3AMORES','FILIAL','Admin Silveira'],
+  'ADMNISTRAÇÃO FILIAL GOIAIS': ['OVOS_3AMORES','FILIAL','Admin Filial Goiás'],
+  'GALPAO 1 | SILVEIRA': ['OVOS_3AMORES','FILIAL','Galpão 1 Silveira'],
+  'GALPAO 2 | SILVEIRA': ['OVOS_3AMORES','FILIAL','Galpão 2 Silveira'],
+  'GALPAO 3A | SILVEIRA': ['OVOS_3AMORES','FILIAL','Galpão 3A Silveira'],
+  'GALPAO 3B | SILVEIRA': ['OVOS_3AMORES','FILIAL','Galpão 3B Silveira'],
+  'GALPÃO 4A | SILVEIRA': ['OVOS_3AMORES','FILIAL','Galpão 4A Silveira'],
+  'GALPAO 4B | SILVEIRA': ['OVOS_3AMORES','FILIAL','Galpão 4B Silveira'],
+  'GALPAO 5 | SILVEIRA': ['OVOS_3AMORES','FILIAL','Galpão 5 Silveira'],
+  'GALPAO 6  | SILVEIRA': ['OVOS_3AMORES','FILIAL','Galpão 6 Silveira'],
+  'GALPAO 7 | SILVEIRA': ['OVOS_3AMORES','FILIAL','Galpão 7 Silveira'],
+  'CONDICIONADOR DE SOLO TRÊS AMORES | FAZENDA': ['COMPOSTAGEM','—','Compostagem'],
+  'PLANTAÇÕES ROMENIQUE': ['PLANTACAO','—','Plantações Romenique'],
+  'PLANTAÇÕES DURVAL': ['PLANTACAO','—','Plantações Durval'],
+  'PLANTAÇÕES GELSON': ['PLANTACAO','—','Plantações Gelson'],
+  'PARTICULAR TRÊS AMORES | FAZENDA': ['PARTICULAR','—','Particular Fazenda'],
+  'PARTICULAR - IGDA': ['PARTICULAR','—','Particular IGDA'],
+  'HARAS TRÊS AMORES | FAZENDA': ['PARTICULAR','—','Haras'],
+  'MÃO DE OBRA OPERÁRIA': ['OUTROS','—','MO Operária'],
+  'TANQUE TRES AMORES | FAZENDA': ['OUTROS','—','Tanque Fazenda'],
+  'FROTA TRÊS AMORES | FAZENDA': ['OUTROS','—','Frota'],
+  'COZINHA INDUSTRIAL TRÊS AMORES | FAZENDA': ['OUTROS','—','Cozinha Industrial'],
+  'DIRETORIA | TRÊS AMORES': ['OUTROS','—','Diretoria'],
+  'CARTÃO CORPORATIVO': ['OUTROS','—','Cartão Corporativo'],
+  'OP. FINANCEIRAS': ['OUTROS','—','Op. Financeiras'],
+  'CUSTOS REAPROPRIAÇÃO | CAVACO': ['OUTROS','—','Reaprop. Cavaco'],
+  // === CENTROS DE CUSTO ADICIONADOS ===
+  'TANQUE TRES AMORES | SERRARIA': ['OUTROS','—','Tanque Serraria'],
+  'CUSTOS REAPROPRIAÇÃO | ALFA MIX': ['OUTROS','—','Reaprop. Alfa Mix'],
+  
+};
+
+const DETALHES_POR_GRUPO = {
+  'OVOS_3AMORES': ['Matriz (consolidado)', 'Filial (consolidado)', 'Entreposto', 'Sala de Classificação',
+    'Almoxarifado Fazenda', 'Almoxarifado Silveira', 'Ração Fazenda',
+    'Admin Fazenda', 'Admin Silveira', 'Admin Filial Goiás',
+    'Galpão Recria', 'Galpão 1 Fazenda', 'Galpão 2 Fazenda',
+    'Galpão 1 Silveira', 'Galpão 2 Silveira', 'Galpão 3A Silveira', 'Galpão 3B Silveira',
+    'Galpão 4A Silveira', 'Galpão 4B Silveira', 'Galpão 5 Silveira', 'Galpão 6 Silveira', 'Galpão 7 Silveira',
+    'Ovos Fazenda'],
+  'COMPOSTAGEM': ['Compostagem'],
+  'PLANTACAO': ['Plantações Romenique', 'Plantações Durval', 'Plantações Gelson'],
+  'PARTICULAR': ['Particular Fazenda', 'Particular IGDA', 'Haras'],
+  'OUTROS': ['MO Operária', 'Tanque Fazenda', 'Tanque Serraria', 'Frota', 'Cozinha Industrial',
+    'Diretoria', 'Cartão Corporativo', 'Op. Financeiras', 'Reaprop. Cavaco', 'Reaprop. Alfa Mix'],
+  'TUDO': [],
+};
+
+const MAPA_OVOS = {
+  'Ovos Branco|Grande':'BRA_GR','Ovos Branco|Médio':'BRA_MED',
+  'Ovos Branco|Tipo A':'BRA_TA','Ovos Branco|Tipo 1':'BRA_T1',
+  'Ovos Vermelho|Grande':'VER_GR','Ovos Vermelho|Extra':'VER_EXT',
+  'Ovos Vermelho|Tipo A':'VER_TA','Ovos Vermelho|Jumbo':'VER_JUM','Ovos Vermelho|Tipo 1':'VER_T1',
+  'Ovos Caipira|Grande':'CAI_GR','Ovos Caipira|Extra':'CAI_EXT',
+};
+const MAPA_PLANT = {
+  'Banana Prata':'PLT_BNP','Abóbora Sergipana':'PLT_ABO','Chuchu':'PLT_CHU',
+  'Banana Prata Vitória':'PLT_BNV',"Banana D'Água":'PLT_BDA',
+};
+
+const DRE_LAYOUT = [
+  { tipo:'section', label:'( + ) FATURAMENTO BRUTO' },
+  { tipo:'subtotal', label:'🥚 Ovos Branco', calc:['BRA_GR','BRA_MED','BRA_TA','BRA_T1'] },
+  { tipo:'detail', label:'Grande', id:'BRA_GR' },
+  { tipo:'detail', label:'Médio', id:'BRA_MED' },
+  { tipo:'detail', label:'Tipo A', id:'BRA_TA' },
+  { tipo:'detail', label:'Tipo 1', id:'BRA_T1' },
+  { tipo:'subtotal', label:'🥚 Ovos Vermelho', calc:['VER_GR','VER_EXT','VER_TA','VER_JUM','VER_T1'] },
+  { tipo:'detail', label:'Grande', id:'VER_GR' },
+  { tipo:'detail', label:'Extra', id:'VER_EXT' },
+  { tipo:'detail', label:'Tipo A', id:'VER_TA' },
+  { tipo:'detail', label:'Jumbo', id:'VER_JUM' },
+  { tipo:'detail', label:'Tipo 1', id:'VER_T1' },
+  { tipo:'subtotal', label:'🐓 Ovos Caipira', calc:['CAI_GR','CAI_EXT'] },
+  { tipo:'detail', label:'Grande', id:'CAI_GR' },
+  { tipo:'detail', label:'Extra', id:'CAI_EXT' },
+  { tipo:'subtotal', label:'🌾 Plantação', calc:['PLT_BNP','PLT_ABO','PLT_CHU','PLT_BNV','PLT_BDA'] },
+  { tipo:'detail', label:'Banana Prata', id:'PLT_BNP' },
+  { tipo:'detail', label:'Abóbora Sergipana', id:'PLT_ABO' },
+  { tipo:'detail', label:'Chuchu', id:'PLT_CHU' },
+  { tipo:'detail', label:'Banana Prata Vitória', id:'PLT_BNV' },
+  { tipo:'detail', label:"Banana D'Água", id:'PLT_BDA' },
+  { tipo:'total', label:'( = ) FATURAMENTO BRUTO TOTAL', id:'FAT_BRUTO' },
+  { tipo:'section', label:'( - ) DEDUÇÕES (Impostos s/ Faturamento)' },
+  { tipo:'detail', label:'ICMS sobre vendas', id:'DED_ICMS' },
+  { tipo:'detail', label:'PIS (0,65%)', id:'DED_PIS' },
+  { tipo:'detail', label:'COFINS (3,00%)', id:'DED_COFINS' },
+  { tipo:'subtotal', label:'( = ) RECEITA LÍQUIDA', id:'REC_LIQ' },
+  { tipo:'section', label:'( - ) CMV — CUSTO DA MERCADORIA VENDIDA' },
+  { tipo:'subtotal', label:'2.1 🌽 Matéria-Prima — Ração', calc:['CMV_MILHO','CMV_SOJA','CMV_NUCLEO'] },
+  { tipo:'detail', label:'Milho', id:'CMV_MILHO' },
+  { tipo:'detail', label:'Farelo de Soja', id:'CMV_SOJA' },
+  { tipo:'detail', label:'Núcleo / Suplemento / Macro / Micro', id:'CMV_NUCLEO' },
+  { tipo:'subtotal', label:'2.2 📦 Embalagens', calc:['CMV_EMBAL'] },
+  { tipo:'detail', label:'Embalagens (pallet, papelão, etc.)', id:'CMV_EMBAL' },
+  { tipo:'subtotal', label:'2.3 💉 Saúde Animal', calc:['CMV_SAUDE'] },
+  { tipo:'detail', label:'Medicamentos e veterinária', id:'CMV_SAUDE' },
+  { tipo:'subtotal', label:'2.4 ⚡ Energia de Produção', calc:['CMV_ENERGIA','OPER_GAS'] },
+  { tipo:'detail', label:'Energia elétrica', id:'CMV_ENERGIA' },
+  { tipo:'detail', label:'Gás', id:'OPER_GAS' },
+  { tipo:'subtotal', label:'2.5 👷 Mão de Obra Direta', calc:['CMV_MOTER'] },
+  { tipo:'detail', label:'Serviços terceirizados', id:'CMV_MOTER' },
+  { tipo:'subtotal', label:'2.6 🦺 EPI e Uniformes', calc:['CMV_EPI'] },
+  { tipo:'detail', label:'EPI / Uniformes', id:'CMV_EPI' },
+  { tipo:'subtotal', label:'2.7 🔧 Manutenção', calc:['CMV_MANUT'] },
+  { tipo:'detail', label:'Manutenção geral + Peças', id:'CMV_MANUT' },
+  { tipo:'subtotal', label:'2.8 ➕ Outros Custos Diretos', calc:['CMV_OUTROS'] },
+  { tipo:'detail', label:'Outros diretos (biossegurança, etc.)', id:'CMV_OUTROS' },
+  { tipo:'sectiontotal', label:'( = ) TOTAL CMV', id:'CMV_TOTAL' },
+  { tipo:'profit', label:'( = ) LUCRO BRUTO', id:'LUCRO_BRUTO' },
+  { tipo:'section', label:'( - ) DESPESAS OPERACIONAIS' },
+  { tipo:'subtotal', label:'4.1 🚚 Logística e Distribuição', calc:['OPER_COMISSAO','OPER_PEDAGIO','OPER_DIESEL','OPER_FRETE','OPER_COMBVEIC','OPER_TRASLADO','OPER_LOCEQ'] },
+  { tipo:'detail', label:'Diesel + Gasolina', id:'OPER_DIESEL' },
+  { tipo:'detail', label:'Frete e carretos', id:'OPER_FRETE' },
+  { tipo:'detail', label:'Pedágios', id:'OPER_PEDAGIO' },
+  { tipo:'detail', label:'Comissão de vendas', id:'OPER_COMISSAO' },
+  { tipo:'detail', label:'Combustíveis veículos / lubrif.', id:'OPER_COMBVEIC' },
+  { tipo:'detail', label:'Locação equipamentos', id:'OPER_LOCEQ' },
+  { tipo:'detail', label:'Traslado / refeições', id:'OPER_TRASLADO' },
+  { tipo:'subtotal', label:'4.2 👥 Pessoal Administrativo', calc:['OPER_FOLHA','OPER_ENCARGOS','OPER_PROLAB','OPER_SEGVIDA','OPER_VALEREF','OPER_SST'] },
+  { tipo:'detail', label:'Folha de pagamento', id:'OPER_FOLHA' },
+  { tipo:'detail', label:'Encargos trabalhistas', id:'OPER_ENCARGOS' },
+  { tipo:'detail', label:'Pró-labore + retiradas sócios', id:'OPER_PROLAB' },
+  { tipo:'detail', label:'Seguro de vida', id:'OPER_SEGVIDA' },
+  { tipo:'detail', label:'Vale refeição', id:'OPER_VALEREF' },
+  { tipo:'detail', label:'SST / Medicina do trabalho', id:'OPER_SST' },
+  { tipo:'subtotal', label:'5.2 🏢 Gestão e Serviços Externos', calc:['OPER_GESTAO','OPER_CONTADOR'] },
+  { tipo:'detail', label:'Gestão / Consultoria / Aluguel', id:'OPER_GESTAO' },
+  { tipo:'detail', label:'Contador / honorários', id:'OPER_CONTADOR' },
+  { tipo:'subtotal', label:'5.3 💻 Infraestrutura e TI', calc:['OPER_INTERNET','OPER_ERP','OPER_CERTDIG'] },
+  { tipo:'detail', label:'Internet', id:'OPER_INTERNET' },
+  { tipo:'detail', label:'Software / ERP / TI', id:'OPER_ERP' },
+  { tipo:'detail', label:'Certificado digital', id:'OPER_CERTDIG' },
+  { tipo:'subtotal', label:'5.4 📣 Marketing e Comercial', calc:['OPER_MKT','OPER_PATROC'] },
+  { tipo:'detail', label:'Marketing / propaganda', id:'OPER_MKT' },
+  { tipo:'detail', label:'Patrocínios / doações', id:'OPER_PATROC' },
+  { tipo:'subtotal', label:'5.5 🍽️ Alimentação e Higiene', calc:['OPER_REFEI','OPER_REFCARNE','OPER_REFALIM','OPER_LIMP'] },
+  { tipo:'detail', label:'Refeições / lanches', id:'OPER_REFEI' },
+  { tipo:'detail', label:'Carnes / proteínas cozinha', id:'OPER_REFCARNE' },
+  { tipo:'detail', label:'Alimentos cozinha', id:'OPER_REFALIM' },
+  { tipo:'detail', label:'Limpeza', id:'OPER_LIMP' },
+  { tipo:'subtotal', label:'5.6 🏗️ Instalações e Outros', calc:['OPER_LAVOURA','OPER_CONFRAT','OPER_TAXAS','OPER_OUTRASFIX','OPER_RESID'] },
+  { tipo:'detail', label:'Adubos / lavoura', id:'OPER_LAVOURA' },
+  { tipo:'detail', label:'Confraternização', id:'OPER_CONFRAT' },
+  { tipo:'detail', label:'Taxas municipais / ISS / licenças', id:'OPER_TAXAS' },
+  { tipo:'detail', label:'Resíduos / containers', id:'OPER_RESID' },
+  { tipo:'detail', label:'Outras despesas fixas', id:'OPER_OUTRASFIX' },
+  { tipo:'sectiontotal', label:'( = ) TOTAL DESPESAS OPERACIONAIS', id:'OPER_TOTAL' },
+  { tipo:'profit', label:'( = ) EBITDA — Lucro Operacional', id:'EBITDA' },
+  { tipo:'section', label:'( - ) IR E CSLL — Lucro Presumido (valor pago)' },
+  { tipo:'detail', label:'IRPJ pago', id:'IMP_IRPJ' },
+  { tipo:'detail', label:'CSLL pago', id:'IMP_CSLL' },
+  { tipo:'sectiontotal', label:'( = ) TOTAL IMPOSTOS LUCRO', id:'IMP_TOTAL' },
+  { tipo:'profit', label:'( = ) 💰 LUCRO LÍQUIDO', id:'LUCRO_LIQ' },
+  { tipo:'section', label:'INVESTIMENTOS (CAPEX) — Excluídos do DRE' },
+  { tipo:'capex', label:'Reforma e Benfeitorias', id:'CAPEX_REFBENF' },
+  { tipo:'capex', label:'Patrimônio / Imobilizado (Ferramental, Móveis, TI)', id:'CAPEX_IMOB' },
+  { tipo:'capex', label:'Outros CAPEX', id:'CAPEX_OUTROS' },
+  { tipo:'sectiontotal', label:'( = ) TOTAL CAPEX', id:'CAPEX_TOTAL' },
+];
+
+let dados = { despesas: [], receitas: [], arquivos: [] };
+
+function carregaPersistencia() {
+  try {
+    const saved = localStorage.getItem('dre_dados_v2');
+    if (saved) {
+      dados = JSON.parse(saved);
+      atualizaUI();
+    }
+  } catch(e) { console.warn('Erro:', e); }
+}
+function persiste() {
+  try { localStorage.setItem('dre_dados_v2', JSON.stringify(dados)); }
+  catch(e) {
+    console.error('localStorage cheio:', e);
+    alert('⚠️ Armazenamento local cheio. Exporte os dados e limpe alguns arquivos antigos.');
+  }
+}
+
+function detectaTipo(workbook) {
+  if (workbook.SheetNames.includes('DadosDetalhados')) return 'CONTAS';
+  if (workbook.SheetNames.includes('Base Vendas')) return 'FATURAMENTO';
+  return null;
+}
+
+function parseValorBR(v) {
+  if (v == null) return 0;
+  if (typeof v === 'number') return v;
+  if (typeof v === 'string') {
+    let s = v.replace(/R\$/g, '').replace(/\s/g, '').trim();
+    s = s.replace(/\./g, '').replace(',', '.');
+    const n = parseFloat(s);
+    return isNaN(n) ? 0 : n;
+  }
+  return 0;
+}
+
+function parseData(d) {
+  if (!d) return null;
+  if (d instanceof Date) return d;
+  if (typeof d === 'number') {
+    const date = XLSX.SSF.parse_date_code(d);
+    if (date) return new Date(date.y, date.m - 1, date.d);
+  }
+  if (typeof d === 'string') {
+    const m = d.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    if (m) return new Date(parseInt(m[3]), parseInt(m[2])-1, parseInt(m[1]));
+  }
+  return null;
+}
+
+function processaContas(workbook) {
+  const ws = workbook.Sheets['DadosDetalhados'];
+  // raw:false porque o "Valor Rateado" vem como string "R$ 1.234,56"
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
+  const arr = [];
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    const data = parseData(row[1]);
+    if (!data) continue;
+    // Validação de range: só aceita datas 2020-2035
+    if (data.getFullYear() < 2020 || data.getFullYear() > 2035) continue;
+    const valor = parseValorBR(row[6]);
+    if (valor === 0) continue;
+    const cc = (row[3] || '').toString().trim().toUpperCase();
+    const ccusto = (row[4] || '').toString().trim();
+    let linhaDre = MAPA_CONTA[cc];
+    if (linhaDre === 'IGNORAR') continue;
+    if (!linhaDre) linhaDre = 'OPER_OUTRASFIX';
+
+    let grupo='OUTROS', subgrupo='—', detalhe='Não classificado';
+    const ccu = ccusto.toUpperCase();
+    let forcaCapex = false;
+    if (ccu.includes('REFORMAS E BENFEITORIA') || ccu === 'PATRIMÔNIO TRÊS AMORES AGRO' || ccu.includes('ADIANTAMENTO A FORNECEDOR')) {
+      forcaCapex = true;
+    }
+    if (NOVO_MAPA_CC[ccu]) {
+      [grupo, subgrupo, detalhe] = NOVO_MAPA_CC[ccu];
+    } else if (forcaCapex) {
+      grupo = 'OVOS_3AMORES'; detalhe = 'CAPEX';
+    } else if (ccusto === '') {
+      grupo = 'SEMCC'; detalhe = 'Sem CC';
+    }
+    if (forcaCapex && !linhaDre.startsWith('CAPEX')) linhaDre = 'CAPEX_REFBENF';
+
+    const periodo = data.getFullYear() + '-' + String(data.getMonth()+1).padStart(2,'0');
+    arr.push({
+      periodo, ano: data.getFullYear(), mes: data.getMonth()+1,
+      linha_dre: linhaDre, grupo, subgrupo, detalhe,
+      centro_custo: ccusto, conta: cc, credor: row[2] || '', valor
+    });
+  }
+  return arr;
+}
+
+function processaFaturamento(workbook) {
+  const ws = workbook.Sheets['Base Vendas'];
+  // raw:true para preservar números puros (sem formatação BR que quebraria o parseFloat)
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
+  const arr = [];
+  for (let i = 2; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r[0]) continue;
+    const codnat = parseInt(r[4]) || 0;
+    const sit = (r[5] || '').toString().trim();
+    if (codnat !== 13 || sit !== 'R') continue;
+    const data = parseData(r[3]);
+    if (!data) continue;
+    // Validação de range: só aceita datas 2020-2035 (evita serial Excel mal interpretado)
+    if (data.getFullYear() < 2020 || data.getFullYear() > 2035) continue;
+    const valor = parseValorBR(r[12]);
+    if (valor === 0) continue;
+    const origem = ((r[1] || '').toString().toUpperCase() === 'MATRIZ') ? 'MATRIZ' : 'FILIAL';
+    const cat = (r[6] || '').toString().trim();
+    const tipo = (r[7] || '').toString().trim();
+    const grupo = (r[14] || '').toString().trim();
+    let linhaId, grupoPrincipal, subgrupo='—', detalhe='Receita';
+    if (grupo === 'Ovos') {
+      linhaId = MAPA_OVOS[cat + '|' + tipo];
+      if (!linhaId) continue;
+      grupoPrincipal = 'OVOS_3AMORES';
+      subgrupo = origem;
+      detalhe = origem === 'MATRIZ' ? 'Receita Ovos Matriz' : 'Receita Ovos Filial';
+    } else {
+      linhaId = MAPA_PLANT[cat];
+      if (!linhaId) continue;
+      grupoPrincipal = 'PLANTACAO';
+      detalhe = 'Receita Plantação';
+    }
+    const periodo = data.getFullYear() + '-' + String(data.getMonth()+1).padStart(2,'0');
+    arr.push({
+      periodo, ano: data.getFullYear(), mes: data.getMonth()+1,
+      linha_id: linhaId, origem, grupo: grupoPrincipal, subgrupo, detalhe, valor
+    });
+  }
+  return arr;
+}
+
+function hashStr(str) {
+  let h = 0;
+  for (let i=0; i<str.length; i++) { h = ((h<<5)-h) + str.charCodeAt(i); h|=0; }
+  return h.toString(36);
+}
+
+function processaArquivos(files) {
+  const proms = [];
+  for (const f of files) {
+    proms.push(new Promise((res, rej) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const wb = XLSX.read(e.target.result, { type: 'array', cellDates: true });
+          const tipo = detectaTipo(wb);
+          if (!tipo) {
+            alert(`❌ Arquivo "${f.name}" não tem aba "DadosDetalhados" nem "Base Vendas". Ignorando.`);
+            res(null); return;
+          }
+          const fileHash = hashStr(f.name + '|' + f.size);
+          if (dados.arquivos.some(a => a.hash === fileHash)) {
+            if (!confirm(`O arquivo "${f.name}" já foi carregado. Recarregar?`)) {
+              res(null); return;
+            }
+            dados.despesas = dados.despesas.filter(d => d._arq !== fileHash);
+            dados.receitas = dados.receitas.filter(d => d._arq !== fileHash);
+            dados.arquivos = dados.arquivos.filter(a => a.hash !== fileHash);
+          }
+          let registrosAdd = 0;
+          if (tipo === 'CONTAS') {
+            const novos = processaContas(wb);
+            novos.forEach(d => { d._arq = fileHash; dados.despesas.push(d); });
+            registrosAdd = novos.length;
+          } else {
+            const novos = processaFaturamento(wb);
+            novos.forEach(d => { d._arq = fileHash; dados.receitas.push(d); });
+            registrosAdd = novos.length;
+          }
+          dados.arquivos.push({
+            nome: f.name, tipo, hash: fileHash, registros: registrosAdd,
+            loadedAt: new Date().toISOString()
+          });
+          res({nome: f.name, tipo, registros: registrosAdd});
+        } catch(err) {
+          console.error(err);
+          alert(`❌ Erro ao processar "${f.name}": ${err.message}`);
+          res(null);
+        }
+      };
+      reader.onerror = rej;
+      reader.readAsArrayBuffer(f);
+    }));
+  }
+  return Promise.all(proms).then(results => {
+    const ok = results.filter(r => r);
+    if (ok.length) {
+      persiste();
+      atualizaUI();
+    }
+  });
+}
+
+function getPeriodosDisponiveis() {
+  const set = new Set();
+  dados.despesas.forEach(d => set.add(d.periodo));
+  dados.receitas.forEach(d => set.add(d.periodo));
+  return Array.from(set).sort();
+}
+
+function atualizaDropdownPeriodo() {
+  const sel = document.getElementById('filtroPeriodo');
+  const periodos = getPeriodosDisponiveis();
+  const valAtual = sel.value;
+  sel.innerHTML = '';
+  const optAcum = document.createElement('option');
+  optAcum.value = 'ACUMULADO';
+  optAcum.textContent = '📊 Acumulado (todos)';
+  sel.appendChild(optAcum);
+  const anos = [...new Set(periodos.map(p => p.split('-')[0]))].sort();
+  anos.forEach(ano => {
+    const opt = document.createElement('option');
+    opt.value = 'ANO_' + ano;
+    opt.textContent = `📅 Ano ${ano} (todos os meses)`;
+    sel.appendChild(opt);
+  });
+  const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  periodos.forEach(p => {
+    const [ano, mes] = p.split('-');
+    const opt = document.createElement('option');
+    opt.value = p;
+    opt.textContent = `${MESES[parseInt(mes)-1]}/${ano.substr(2)}`;
+    sel.appendChild(opt);
+  });
+  if (valAtual && [...sel.options].some(o => o.value === valAtual)) sel.value = valAtual;
+}
+
+function atualizaDetalhes() {
+  const grupo = document.getElementById('filtroGrupo').value;
+  const sel = document.getElementById('filtroDetalhe');
+  sel.innerHTML = '';
+  const optAll = document.createElement('option');
+  optAll.value = 'TODOS';
+  optAll.textContent = grupo === 'TUDO' ? '— Todos (geral) —' : '— Todos do grupo —';
+  sel.appendChild(optAll);
+  if (grupo === 'TUDO') { sel.disabled = true; return; }
+  sel.disabled = false;
+  const detalhes = DETALHES_POR_GRUPO[grupo] || [];
+  detalhes.forEach(d => {
+    const opt = document.createElement('option');
+    opt.value = d;
+    opt.textContent = d;
+    sel.appendChild(opt);
+  });
+}
+
+function filtraDespesas() {
+  const periodo = document.getElementById('filtroPeriodo').value;
+  const grupo = document.getElementById('filtroGrupo').value;
+  const detalhe = document.getElementById('filtroDetalhe').value;
+  return dados.despesas.filter(d => {
+    if (periodo === 'ACUMULADO') {}
+    else if (periodo.startsWith('ANO_')) {
+      if (d.ano !== parseInt(periodo.substr(4))) return false;
+    } else {
+      if (d.periodo !== periodo) return false;
+    }
+    if (grupo !== 'TUDO' && d.grupo !== grupo) return false;
+    if (detalhe !== 'TODOS') {
+      if (detalhe === 'Matriz (consolidado)') {
+        if (d.subgrupo !== 'MATRIZ') return false;
+      } else if (detalhe === 'Filial (consolidado)') {
+        if (d.subgrupo !== 'FILIAL') return false;
+      } else {
+        if (d.detalhe !== detalhe) return false;
+      }
+    }
+    return true;
+  });
+}
+
+function filtraReceitas() {
+  const periodo = document.getElementById('filtroPeriodo').value;
+  const grupo = document.getElementById('filtroGrupo').value;
+  const detalhe = document.getElementById('filtroDetalhe').value;
+  return dados.receitas.filter(d => {
+    if (periodo === 'ACUMULADO') {}
+    else if (periodo.startsWith('ANO_')) {
+      if (d.ano !== parseInt(periodo.substr(4))) return false;
+    } else {
+      if (d.periodo !== periodo) return false;
+    }
+    if (grupo !== 'TUDO' && d.grupo !== grupo) return false;
+    if (detalhe !== 'TODOS') {
+      if (detalhe === 'Matriz (consolidado)') {
+        if (d.subgrupo !== 'MATRIZ') return false;
+      } else if (detalhe === 'Filial (consolidado)') {
+        if (d.subgrupo !== 'FILIAL') return false;
+      } else {
+        return false; // detalhes específicos não têm receita direta
+      }
+    }
+    return true;
+  });
+}
+
+function somaPorLinha() {
+  const totais = {};
+  filtraDespesas().forEach(d => { totais[d.linha_dre] = (totais[d.linha_dre] || 0) + d.valor; });
+  filtraReceitas().forEach(r => { totais[r.linha_id] = (totais[r.linha_id] || 0) + r.valor; });
+  return totais;
+}
+
+function formataBR(v) {
+  return 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function formataBRcurto(v) {
+  if (Math.abs(v) >= 1e6) return 'R$ ' + (v/1e6).toLocaleString('pt-BR',{minimumFractionDigits:2, maximumFractionDigits:2}) + 'M';
+  if (Math.abs(v) >= 1e3) return 'R$ ' + (v/1e3).toLocaleString('pt-BR',{minimumFractionDigits:1, maximumFractionDigits:1}) + 'k';
+  return 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function formataPct(v, base) {
+  if (base === 0) return '—';
+  return ((v/base)*100).toFixed(1) + '%';
+}
+
+function calcula(totais) {
+  const ovosBranco = (totais.BRA_GR||0) + (totais.BRA_MED||0) + (totais.BRA_TA||0) + (totais.BRA_T1||0);
+  const ovosVermelho = (totais.VER_GR||0) + (totais.VER_EXT||0) + (totais.VER_TA||0) + (totais.VER_JUM||0) + (totais.VER_T1||0);
+  const ovosCaipira = (totais.CAI_GR||0) + (totais.CAI_EXT||0);
+  const plantacao = (totais.PLT_BNP||0) + (totais.PLT_ABO||0) + (totais.PLT_CHU||0) + (totais.PLT_BNV||0) + (totais.PLT_BDA||0);
+  const ovos_total = ovosBranco + ovosVermelho + ovosCaipira;
+  const fatBruto = ovos_total + plantacao;
+  const icms = totais.DED_ICMS || 0;
+  const pis = fatBruto * 0.0065;
+  const cofins = fatBruto * 0.03;
+  const deducoes = icms + pis + cofins;
+  const recLiq = fatBruto - deducoes;
+  const cmv = (totais.CMV_MILHO||0)+(totais.CMV_SOJA||0)+(totais.CMV_NUCLEO||0)
+    +(totais.CMV_EMBAL||0)+(totais.CMV_SAUDE||0)
+    +(totais.CMV_ENERGIA||0)+(totais.OPER_GAS||0)
+    +(totais.CMV_MOTER||0)+(totais.CMV_EPI||0)+(totais.CMV_MANUT||0)+(totais.CMV_OUTROS||0);
+  const lucroBruto = recLiq - cmv;
+  const oper = (totais.OPER_COMISSAO||0)+(totais.OPER_PEDAGIO||0)+(totais.OPER_DIESEL||0)+(totais.OPER_FRETE||0)
+    +(totais.OPER_COMBVEIC||0)+(totais.OPER_TRASLADO||0)+(totais.OPER_LOCEQ||0)
+    +(totais.OPER_FOLHA||0)+(totais.OPER_ENCARGOS||0)+(totais.OPER_PROLAB||0)
+    +(totais.OPER_SEGVIDA||0)+(totais.OPER_VALEREF||0)+(totais.OPER_SST||0)
+    +(totais.OPER_GESTAO||0)+(totais.OPER_CONTADOR||0)
+    +(totais.OPER_INTERNET||0)+(totais.OPER_ERP||0)+(totais.OPER_CERTDIG||0)
+    +(totais.OPER_MKT||0)+(totais.OPER_PATROC||0)
+    +(totais.OPER_REFEI||0)+(totais.OPER_REFCARNE||0)+(totais.OPER_REFALIM||0)+(totais.OPER_LIMP||0)
+    +(totais.OPER_LAVOURA||0)+(totais.OPER_CONFRAT||0)+(totais.OPER_TAXAS||0)+(totais.OPER_OUTRASFIX||0)+(totais.OPER_RESID||0);
+  const ebitda = lucroBruto - oper;
+  const irpj = totais.IMP_IRPJ || 0;
+  const csll = totais.IMP_CSLL || 0;
+  const lucroLiq = ebitda - irpj - csll;
+  return { ovosBranco, ovosVermelho, ovosCaipira, plantacao, ovos_total, fatBruto,
+    icms, pis, cofins, deducoes, recLiq, cmv, lucroBruto, oper, ebitda, irpj, csll, lucroLiq };
+}
+
+function geraLinhaTabela(item, totais, calc) {
+  if (item.tipo === 'section') {
+    return `<tr class="section"><td>${item.label}</td><td></td><td></td></tr>`;
+  }
+  const valor = getValorLinha(item, totais, calc);
+  const pct = calc.fatBruto > 0 ? ((valor/calc.fatBruto)*100).toFixed(1) + '%' : '—';
+  let cls = item.tipo;
+  if (item.tipo === 'profit' && valor < 0) cls = 'profit negative';
+  if (item.tipo === 'sectiontotal') cls = 'sectiontotal';
+  return `<tr class="${cls}"><td>${item.label}</td><td class="value">${formataBR(valor)}</td><td class="pct">${pct}</td></tr>`;
+}
+
+function atualizaDRE() {
+  if (typeof viewMode !== 'undefined' && viewMode === 'COMPARATIVO') { renderComparativo(); return; }
+  const totais = somaPorLinha();
+  const calc = calcula(totais);
+  document.getElementById('kpiFat').textContent = formataBRcurto(calc.fatBruto);
+  document.getElementById('kpiFatLabel').textContent = calc.fatBruto >= 0 ? '✅ receita do período' : '—';
+  document.getElementById('kpiLB').textContent = formataBRcurto(calc.lucroBruto);
+  document.getElementById('kpiLB').className = 'value ' + (calc.lucroBruto >= 0 ? 'positive' : 'negative');
+  document.getElementById('kpiLBmargin').textContent = 'Margem Bruta ' + formataPct(calc.lucroBruto, calc.fatBruto);
+  document.getElementById('kpiEBITDA').textContent = formataBRcurto(calc.ebitda);
+  document.getElementById('kpiEBITDA').className = 'value ' + (calc.ebitda >= 0 ? 'positive' : 'negative');
+  document.getElementById('kpiEBITDAmargin').textContent = 'Margem EBITDA ' + formataPct(calc.ebitda, calc.fatBruto);
+  document.getElementById('kpiLL').textContent = formataBRcurto(calc.lucroLiq);
+  document.getElementById('kpiLL').className = 'value ' + (calc.lucroLiq >= 0 ? 'positive' : 'negative');
+  document.getElementById('kpiLLmargin').textContent = 'Margem Líquida ' + formataPct(calc.lucroLiq, calc.fatBruto);
+  document.getElementById('dreBody').innerHTML = DRE_LAYOUT.map(item => geraLinhaTabela(item, totais, calc)).join('');
+}
+
+function atualizaUI() {
+  const temDados = dados.despesas.length > 0 || dados.receitas.length > 0;
+  document.getElementById('emptyState').style.display = temDados ? 'none' : 'block';
+  document.getElementById('dashboard').style.display = temDados ? 'block' : 'none';
+  document.getElementById('filesList').style.display = dados.arquivos.length > 0 ? 'block' : 'none';
+  const filesContainer = document.getElementById('filesChips');
+  filesContainer.innerHTML = '';
+  dados.arquivos.forEach(a => {
+    const chip = document.createElement('div');
+    chip.className = 'file-chip ' + (a.tipo === 'FATURAMENTO' ? 'faturamento' : '');
+    chip.innerHTML = `${a.tipo === 'FATURAMENTO' ? '🟦' : '🟢'} ${a.nome} <small>(${a.registros} reg.)</small> <button class="remove" onclick="removeArq('${a.hash}')">✕</button>`;
+    filesContainer.appendChild(chip);
+  });
+  document.getElementById('filesHeader').textContent = `📚 ${dados.arquivos.length} arquivo${dados.arquivos.length !== 1 ? 's' : ''} carregado${dados.arquivos.length !== 1 ? 's' : ''}:`;
+  if (temDados) {
+    atualizaDropdownPeriodo();
+    atualizaDetalhes();
+    atualizaDRE();
+  }
+}
+
+function removeArq(hash) {
+  if (!confirm('Remover esse arquivo e seus dados?')) return;
+  dados.despesas = dados.despesas.filter(d => d._arq !== hash);
+  dados.receitas = dados.receitas.filter(d => d._arq !== hash);
+  dados.arquivos = dados.arquivos.filter(a => a.hash !== hash);
+  persiste();
+  atualizaUI();
+}
+
+function clearAll() {
+  if (!confirm('⚠️ Apagar TODOS os dados carregados? Esta ação não pode ser desfeita (use Exportar antes).')) return;
+  dados = { despesas: [], receitas: [], arquivos: [] };
+  localStorage.removeItem('dre_dados_v2');
+  atualizaUI();
+}
+
+function exportData() {
+  const blob = new Blob([JSON.stringify(dados, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `dre_dados_backup_${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+['dragenter','dragover'].forEach(ev => {
+  dropzone.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); dropzone.classList.add('drag-over'); });
+});
+['dragleave','drop'].forEach(ev => {
+  dropzone.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); dropzone.classList.remove('drag-over'); });
+});
+dropzone.addEventListener('drop', e => {
+  const files = [...e.dataTransfer.files].filter(f => f.name.endsWith('.xlsx'));
+  if (files.length) processaArquivos(files);
+});
+fileInput.addEventListener('change', e => {
+  const files = [...e.target.files];
+  if (files.length) processaArquivos(files);
+  e.target.value = '';
+});
+
+
+let viewMode = 'DRE';
+
+function setMode(m) {
+  viewMode = m;
+  document.getElementById('tabDRE').classList.toggle('active', m === 'DRE');
+  document.getElementById('tabComp').classList.toggle('active', m === 'COMPARATIVO');
+  document.getElementById('viewDRE').style.display = m === 'DRE' ? 'block' : 'none';
+  document.getElementById('viewComp').style.display = m === 'COMPARATIVO' ? 'block' : 'none';
+  document.getElementById('filtroPeriodo').disabled = (m === 'COMPARATIVO');
+  atualizaDRE();
+}
+
+function getPeriodosFiltrados() {
+  const periodo = document.getElementById('filtroPeriodo').value;
+  const periodos = getPeriodosDisponiveis();
+  if (periodo === 'ACUMULADO' || viewMode === 'COMPARATIVO') return periodos;
+  if (periodo.startsWith('ANO_')) {
+    const ano = periodo.substr(4);
+    return periodos.filter(p => p.startsWith(ano));
+  }
+  return [periodo];
+}
+
+function filtraDespesasNoPeriodo(periodo) {
+  const grupo = document.getElementById('filtroGrupo').value;
+  const detalhe = document.getElementById('filtroDetalhe').value;
+  return dados.despesas.filter(d => {
+    if (d.periodo !== periodo) return false;
+    if (grupo !== 'TUDO' && d.grupo !== grupo) return false;
+    if (detalhe !== 'TODOS') {
+      if (detalhe === 'Matriz (consolidado)') { if (d.subgrupo !== 'MATRIZ') return false; }
+      else if (detalhe === 'Filial (consolidado)') { if (d.subgrupo !== 'FILIAL') return false; }
+      else if (d.detalhe !== detalhe) return false;
+    }
+    return true;
+  });
+}
+
+function filtraReceitasNoPeriodo(periodo) {
+  const grupo = document.getElementById('filtroGrupo').value;
+  const detalhe = document.getElementById('filtroDetalhe').value;
+  return dados.receitas.filter(d => {
+    if (d.periodo !== periodo) return false;
+    if (grupo !== 'TUDO' && d.grupo !== grupo) return false;
+    if (detalhe !== 'TODOS') {
+      if (detalhe === 'Matriz (consolidado)') { if (d.subgrupo !== 'MATRIZ') return false; }
+      else if (detalhe === 'Filial (consolidado)') { if (d.subgrupo !== 'FILIAL') return false; }
+      else return false;
+    }
+    return true;
+  });
+}
+
+function somaPorLinhaPeriodo(periodo) {
+  const totais = {};
+  filtraDespesasNoPeriodo(periodo).forEach(d => { totais[d.linha_dre] = (totais[d.linha_dre] || 0) + d.valor; });
+  filtraReceitasNoPeriodo(periodo).forEach(r => { totais[r.linha_id] = (totais[r.linha_id] || 0) + r.valor; });
+  return totais;
+}
+
+function getValorLinha(item, totais, calc) {
+  let valor = 0;
+  if (item.tipo === 'detail' || item.tipo === 'capex') {
+    if (item.id === 'DED_PIS') valor = calc.pis;
+    else if (item.id === 'DED_COFINS') valor = calc.cofins;
+    else valor = totais[item.id] || 0;
+  } else if (item.tipo === 'subtotal') {
+    if (item.calc) valor = item.calc.reduce((s,id) => s + (totais[id]||0), 0);
+    else if (item.id === 'REC_LIQ') valor = calc.recLiq;
+  } else if (item.tipo === 'total') {
+    if (item.id === 'FAT_BRUTO') valor = calc.fatBruto;
+  } else if (item.tipo === 'sectiontotal') {
+    if (item.id === 'CMV_TOTAL') valor = calc.cmv;
+    else if (item.id === 'OPER_TOTAL') valor = calc.oper;
+    else if (item.id === 'IMP_TOTAL') valor = (calc.irpj || 0) + (calc.csll || 0);
+    else if (item.id === 'CAPEX_TOTAL') valor = (totais.CAPEX_REFBENF||0) + (totais.CAPEX_IMOB||0) + (totais.CAPEX_OUTROS||0);
+  } else if (item.tipo === 'profit') {
+    if (item.id === 'LUCRO_BRUTO') valor = calc.lucroBruto;
+    else if (item.id === 'EBITDA') valor = calc.ebitda;
+    else if (item.id === 'LUCRO_LIQ') valor = calc.lucroLiq;
+  }
+  return valor;
+}
+
+function renderComparativo() {
+  const periodos = getPeriodosFiltrados();
+  const MESES_ABBR = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+
+  // Cabeçalho: cada mês ganha duas colunas (valor + %), idem Total e Média
+  let headerHtml = '<th rowspan="2">Descrição</th>';
+  periodos.forEach(p => {
+    const [ano, mes] = p.split('-');
+    headerHtml += '<th colspan="2">' + MESES_ABBR[parseInt(mes)-1] + '/' + ano.substr(2) + '</th>';
+  });
+  headerHtml += '<th class="total-col" colspan="2">Total</th>';
+  headerHtml += '<th class="avg-col" colspan="2">Média</th>';
+
+  // Linha 2 do cabeçalho: R$ / %
+  let header2Html = '';
+  periodos.forEach(_ => {
+    header2Html += '<th class="sub-h">R$</th><th class="sub-h pct-h">%</th>';
+  });
+  header2Html += '<th class="total-col sub-h">R$</th><th class="total-col pct-h sub-h">%</th>';
+  header2Html += '<th class="avg-col sub-h">R$</th><th class="avg-col pct-h sub-h">%</th>';
+
+  document.getElementById('compHeader').innerHTML = headerHtml;
+  // Renderiza segunda linha do header (precisa estar dentro do thead)
+  const thead = document.getElementById('compTable').querySelector('thead');
+  // Remove qualquer 2a linha antiga
+  while (thead.rows.length > 1) thead.deleteRow(1);
+  const tr2 = thead.insertRow();
+  tr2.innerHTML = header2Html;
+
+  const totaisPorPeriodo = periodos.map(p => {
+    const t = somaPorLinhaPeriodo(p);
+    return { periodo: p, totais: t, calc: calcula(t) };
+  });
+
+  let bodyHtml = '';
+  DRE_LAYOUT.forEach(item => {
+    if (item.tipo === 'section') {
+      const colspan = (periodos.length + 2) * 2 + 1;
+      bodyHtml += '<tr class="section"><td colspan="' + colspan + '">' + item.label + '</td></tr>';
+      return;
+    }
+    const valores = totaisPorPeriodo.map(tp => getValorLinha(item, tp.totais, tp.calc));
+    const fatBrutos = totaisPorPeriodo.map(tp => tp.calc.fatBruto);
+    const total = valores.reduce((a,b) => a+b, 0);
+    const media = valores.length > 0 ? total / valores.length : 0;
+    const fatTotal = fatBrutos.reduce((a,b) => a+b, 0);
+    const fatMedia = fatBrutos.length > 0 ? fatTotal / fatBrutos.length : 0;
+
+    let rowClass = item.tipo + '-row';
+    if (item.tipo === 'profit' && total < 0) rowClass = 'profit-row negative';
+
+    bodyHtml += '<tr class="' + rowClass + '">';
+    bodyHtml += '<td>' + item.label + '</td>';
+    valores.forEach((v, i) => {
+      const pct = fatBrutos[i] > 0 ? ((v/fatBrutos[i])*100).toFixed(1) + '%' : '—';
+      bodyHtml += '<td>' + (v ? formataBRcurto(v) : '—') + '</td>';
+      bodyHtml += '<td class="pct-cell">' + (v ? pct : '—') + '</td>';
+    });
+    const pctTotal = fatTotal > 0 ? ((total/fatTotal)*100).toFixed(1) + '%' : '—';
+    const pctMedia = fatMedia > 0 ? ((media/fatMedia)*100).toFixed(1) + '%' : '—';
+    bodyHtml += '<td class="month-total-cell">' + formataBRcurto(total) + '</td>';
+    bodyHtml += '<td class="month-total-cell pct-cell">' + pctTotal + '</td>';
+    bodyHtml += '<td class="month-avg-cell">' + formataBRcurto(media) + '</td>';
+    bodyHtml += '<td class="month-avg-cell pct-cell">' + pctMedia + '</td>';
+    bodyHtml += '</tr>';
+  });
+  document.getElementById('compBody').innerHTML = bodyHtml;
+
+  const totaisGerais = {};
+  totaisPorPeriodo.forEach(tp => {
+    Object.entries(tp.totais).forEach(([k,v]) => { totaisGerais[k] = (totaisGerais[k]||0) + v; });
+  });
+  atualizaKPIs(calcula(totaisGerais));
+}
+
+function atualizaKPIs(calc) {
+  document.getElementById('kpiFat').textContent = formataBRcurto(calc.fatBruto);
+  document.getElementById('kpiFatLabel').textContent = calc.fatBruto > 0 ? '✅ receita do período' : '—';
+  document.getElementById('kpiLB').textContent = formataBRcurto(calc.lucroBruto);
+  document.getElementById('kpiLB').className = 'value ' + (calc.lucroBruto >= 0 ? 'positive' : 'negative');
+  document.getElementById('kpiLBmargin').textContent = 'Margem Bruta ' + formataPct(calc.lucroBruto, calc.fatBruto);
+  document.getElementById('kpiEBITDA').textContent = formataBRcurto(calc.ebitda);
+  document.getElementById('kpiEBITDA').className = 'value ' + (calc.ebitda >= 0 ? 'positive' : 'negative');
+  document.getElementById('kpiEBITDAmargin').textContent = 'Margem EBITDA ' + formataPct(calc.ebitda, calc.fatBruto);
+  document.getElementById('kpiLL').textContent = formataBRcurto(calc.lucroLiq);
+  document.getElementById('kpiLL').className = 'value ' + (calc.lucroLiq >= 0 ? 'positive' : 'negative');
+  document.getElementById('kpiLLmargin').textContent = 'Margem Líquida ' + formataPct(calc.lucroLiq, calc.fatBruto);
+}
+
+carregaPersistencia();
+atualizaUI();
+</script>
+</body>
+</html>

@@ -1,0 +1,35 @@
+# Configuração geral — Painel Financeiro 3 Amores
+pasta_dados: "."              # raiz com as pastas 1.x, 2.x, 3, 4, RECRIA HISTÓRICO
+
+periodo_analise:
+  inicio: "2025-01"
+  fim: "2026-04"
+
+custeio:
+  metodo: "media_ponderada"   # valorização do estoque
+  mes_virada_estoque: 1
+
+deducoes:
+  pis_cofins_calcular_por_aliquota: false   # NUNCA calcular; puxar das contas reais (§3.6)
+
+cmv:
+  racao_por_consumo: true       # CMV ração = produtos produzidos (POSTURA), não compras
+  embalagem_por_consumo: false  # v1 provisório (compras); Fase 2 = consumo por produto via composição
+
+ativo_biologico:
+  tratar_recria_como_ativo: true
+  metodo_amortizacao: "LINEAR"  # LINEAR | PRODUCAO
+  ciclo_postura_meses: 13
+  lote_atual:
+    lote_id: "GR01-0925"
+    fonte_recria: "RECRIA HISTÓRICO"
+    galpao_postura: "GS02"
+    grupo_galpao: "OVOS_3AMORES/FILIAL"
+
+reapropriar:
+  # linhas sem CC ou sem conta vão para a aba Reapropriar/Verificar (não entram na DRE)
+  ativar: true
+
+balanco:
+  capital_social: 12480000   # capital social integralizado pelos sócios (R$)
+  saldo_caixa_inicial: 17431.11   # SALDO ANTERIOR 01/01/2025: Bradesco Matriz 17.431,11 + Santander 0,00 (extratos 1.3). Ressalva: CONTAMAX/aplicação Santander em 31/12/2024 não consta (era ínfima — IOF dez = R$1,82)

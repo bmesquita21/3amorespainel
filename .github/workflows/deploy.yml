@@ -1,0 +1,33 @@
+name: Deploy ao VPS
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Conectar no VPS e redesployar
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT }}
+          script: |
+            set -e
+            cd ~/painel-3amores
+            git pull origin main
+            DOCKER_BUILDKIT=0 docker build --no-cache -t painel-3amores:latest .
+            docker stop painel-3amores
+            docker rm painel-3amores
+            docker run -d \
+              --name painel-3amores \
+              --restart unless-stopped \
+              -e PAINEL_DADOS=/dados \
+              -v /mnt/dados-painel:/dados \
+              --network npm-network \
+              painel-3amores:latest
+            echo "Deploy concluído com sucesso!"

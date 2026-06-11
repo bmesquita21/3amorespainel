@@ -1,0 +1,33 @@
+# Stack do Painel 3 Amores para o Portainer.
+# Deploy: Portainer → Stacks → Add stack → "Repository" (GitOps) apontando para este repo.
+# O Nginx que já existe faz o proxy + HTTPS para o container (porta interna 8501).
+
+services:
+  painel-3amores:
+    build: .
+    image: painel-3amores:latest
+    container_name: painel-3amores
+    restart: unless-stopped
+    environment:
+      - PAINEL_DADOS=/dados          # o painel lê planilhas/extratos/senhas daqui
+      # Conexão direta com ERP Auditor (Firebird 4) — credenciais somente leitura
+      - FB_HOST=192.168.100.201
+      - FB_PORT=3050
+      - FB_DATABASE=/opt/Auditor/Dados/AUDITOR.FDB
+      - FB_USER=RO_AUDITOR
+      - FB_PASSWORD=3@mores
+      - FB_CHARSET=WIN1252
+      - FB_CLIENT_LIBRARY=libfbclient.so.2
+    volumes:
+      # Pasta SMB montada NO HOST (Debian) -> /dados dentro do container.
+      # AJUSTE o caminho do host para onde a SMB foi montada (ex.: /mnt/dados-painel).
+      - /mnt/dados-painel:/dados
+    expose:
+      - "8501"                       # interno; NÃO publica no host — quem publica é o Nginx
+    networks:
+      - npm-network
+
+networks:
+  # AJUSTE para o nome da rede Docker do seu Nginx (ex.: nginx_proxy, npm_default, traefik).
+  npm-network:
+    external: true

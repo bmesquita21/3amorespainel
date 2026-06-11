@@ -1,0 +1,44 @@
+﻿tipo;label;id;calc
+section;( + ) FATURAMENTO BRUTO;;
+subtotal;Ovos Branco;BRA;BRA_GR,BRA_MED,BRA_TA,BRA_T1
+subtotal;Ovos Vermelho;VER;VER_GR,VER_EXT,VER_TA,VER_JUM,VER_T1,VER_MED,VER_T2
+subtotal;Ovos Caipira;CAI;CAI_GR,CAI_EXT,CAI_TA,CAI_JUM,CAI_PEQ
+subtotal;Plantação;PLT;PLT_BNP,PLT_ABO,PLT_CHU,PLT_BNV,PLT_BDA,PLT_JILO,PLT_PIM,PLT_ABA,PLT_INH
+total;( = ) FATURAMENTO BRUTO;FAT_BRUTO;
+section;( - ) DEDUÇÕES;;
+detail;ICMS (real);DED_ICMS;
+detail;PIS (das contas reais);DED_PIS;
+detail;COFINS (das contas reais);DED_COFINS;
+subtotal;( = ) RECEITA LÍQUIDA;REC_LIQ;
+section;( - ) CMV;;
+detail;Ração (consumo postura);CMV_RACAO;
+detail;Embalagens;CMV_EMBAL;
+detail;Saúde animal;CMV_SAUDE;
+detail;Energia+Gás;CMV_ENERGIA;
+detail;Mão de obra direta;CMV_MOTER;
+detail;EPI;CMV_EPI;
+detail;Manutenção;CMV_MANUT;
+detail;Outros diretos;CMV_OUTROS;
+sectiontotal;( = ) TOTAL CMV;CMV_TOTAL;
+profit;( = ) LUCRO BRUTO;LUCRO_BRUTO;
+section;( - ) DESPESAS OPERACIONAIS;;
+subtotal;Logística;OPER_LOG;
+subtotal;Pessoal admin;OPER_PES;
+subtotal;Gestão/serviços;OPER_GES;
+subtotal;Infra/TI;OPER_TI;
+subtotal;Marketing;OPER_MKT;
+subtotal;Alimentação/higiene;OPER_ALI;
+subtotal;Instalações/outros;OPER_INS;
+sectiontotal;( = ) TOTAL DESP. OPERACIONAIS;OPER_TOTAL;
+profit;( = ) EBITDA;EBITDA;
+detail;( - ) Depreciação;DEPREC;
+profit;( = ) EBIT;EBIT;
+detail;( ± ) Resultado financeiro;RESULT_FIN;
+profit;( = ) LAIR;LAIR;
+detail;IRPJ (real);IMP_IRPJ;
+detail;CSLL (real);IMP_CSLL;
+sectiontotal;( = ) TOTAL IMPOSTOS LUCRO;IMP_TOTAL;
+profit;( = ) LUCRO LÍQUIDO;LUCRO_LIQ;
+capex;CAPEX (fora da DRE);CAPEX;
+nota;A Reapropriar/Verificar;REAPROP;
+nota;Descarte de aves (Fase 6);DESCARTE;

@@ -1,0 +1,12 @@
+# Configuração do Painel 3 Amores.
+# Este arquivo (uso LOCAL, no PC da Sabrina) mantém o comportamento normal:
+# abre o navegador sozinho e escuta em localhost. NÃO mexa aqui para uso local.
+#
+# Para PRODUÇÃO no servidor, o TI adiciona a seção [server] descrita no
+# DEPLOY_GUIA_TI.md (itens 5 e 7) — headless, address 127.0.0.1, XSRF, etc.
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+base = "light"
