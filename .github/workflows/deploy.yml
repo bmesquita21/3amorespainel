@@ -20,14 +20,5 @@ jobs:
             set -e
             cd ~/painel-3amores
             git pull origin main
-            DOCKER_BUILDKIT=0 docker build --no-cache -t painel-3amores:latest .
-            docker stop painel-3amores
-            docker rm painel-3amores
-            docker run -d \
-              --name painel-3amores \
-              --restart unless-stopped \
-              -e PAINEL_DADOS=/dados \
-              -v /mnt/dados-painel:/dados \
-              --network npm-network \
-              painel-3amores:latest
+            docker compose up -d --build
             echo "Deploy concluído com sucesso!"
