@@ -17,9 +17,11 @@ except ImportError:
 try:
     import db_pg as _PG
     import pg_migrate as _PGM
+    import config_pg as _CFG_PG
     _PG_DISPONIVEL = True
 except ImportError:
     _PG_DISPONIVEL = False
+    _CFG_PG = None
 
 st.set_page_config(page_title="Painel Financeiro 3 Amores", page_icon="🥚", layout="wide")
 _brand.aplicar()
@@ -1005,15 +1007,18 @@ with tabs[7]:
 
 # ---------------- Config ----------------
 with tabs[8]:
-    st.subheader("Configurações — de-para editáveis")
-    cfgdir = os.path.join(pasta, "config")
-    for fn in ["config_contas.csv", "config_centros_custo.csv", "config_produtos.csv", "config_impostos.csv", "config_layout_dre.csv"]:
-        fp = os.path.join(cfgdir, fn)
-        if os.path.exists(fp):
-            with st.expander(fn):
-                try: st.dataframe(pd.read_csv(fp, sep=";", encoding="utf-8-sig"), hide_index=True, height=280, use_container_width=True)
-                except Exception as e: st.write(f"(erro ao abrir: {e})")
-    st.caption("Edite os CSVs em /config (Excel) e clique 🔄 Atualizar para recalcular.")
+    st.subheader("⚙️ Configurações")
+    if _CFG_PG is not None:
+        _CFG_PG.render(pasta)
+    else:
+        st.warning("Módulo config_pg não disponível.")
+        cfgdir = os.path.join(pasta, "config")
+        for fn in ["config_contas.csv", "config_centros_custo.csv", "config_produtos.csv"]:
+            fp = os.path.join(cfgdir, fn)
+            if os.path.exists(fp):
+                with st.expander(fn):
+                    try: st.dataframe(pd.read_csv(fp, sep=";", encoding="utf-8-sig"), hide_index=True, height=280, use_container_width=True)
+                    except Exception as e: st.write(f"(erro: {e})")
     st.divider()
     st.subheader("📊 Status dos dados carregados")
     _rac = dfs.get("racao"); _prod = dfs.get("producao"); _desp = dfs.get("despesa"); _rec = dfs.get("receita")
