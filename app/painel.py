@@ -3,7 +3,7 @@
 import os
 import pandas as pd
 import streamlit as st
-import brutils as B, configs as C, ingest as I, dre as D, fc as FC, bp as BP, biological as BIO, extrato as EX
+import brutils as B, configs as C, dre as D, fc as FC, bp as BP, biological as BIO, extrato as EX
 import brand as _brand
 
 # --- Suporte a modo banco de dados (Firebird) ---
@@ -61,15 +61,6 @@ if _PG_DISPONIVEL and _PG.is_available():
 import auth as _auth
 _USUARIO = _auth.login_gate(DADOS)
 
-import sys as _sys, os as _os
-_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
-import cache_disco as _CD
-
-@st.cache_data(show_spinner="Lendo planilhas da pasta...")
-def carregar(base):
-    cfg = C.load(os.path.join(base, "config"))
-    return _CD.carregar_com_cache(base, lambda: I.load_all(base, cfg))
-
 @st.cache_data(show_spinner="Conectando ao banco de dados (Firebird)...", ttl=1800)
 def carregar_do_banco(base):
     cfg = C.load(os.path.join(base, "config"))
@@ -77,7 +68,7 @@ def carregar_do_banco(base):
 
 @st.cache_data(show_spinner="Lendo extratos bancários (PDF)...")
 def carregar_extratos(base):
-    try: return _CD.carregar_extratos_com_cache(base, lambda: EX.load_transacoes(base))
+    try: return EX.load_transacoes(base)
     except Exception:
         import pandas as _pd
         return _pd.DataFrame(), _pd.DataFrame()
@@ -166,28 +157,15 @@ st.sidebar.markdown("""
 _auth.logout_button()
 pasta = st.sidebar.text_input("📁 Pasta de dados", value=DADOS)
 
-# --- Seleção de fonte de dados ---
-if _DB_DISPONIVEL:
-    _fonte_opcoes = ["Banco de dados (Firebird)", "Planilhas (Excel)"]
-    _fonte_sel = st.sidebar.radio("🔌 Fonte de dados", _fonte_opcoes, index=0, key="fonte_dados")
-    _modo_banco = _fonte_sel == "Banco de dados (Firebird)"
-else:
-    _modo_banco = False
-
 if st.sidebar.button("🔄 Atualizar dados", use_container_width=True):
-    _CD.limpar_cache(pasta); st.cache_data.clear(); st.rerun()
+    st.cache_data.clear(); st.rerun()
 
 try:
-    if _modo_banco:
-        dfs = carregar_do_banco(pasta)
-    else:
-        dfs = carregar(pasta)
+    dfs = carregar_do_banco(pasta)
 except Exception as e:
-    _modo_str = "banco de dados" if _modo_banco else "planilhas"
-    st.error(f"Erro ao carregar {_modo_str}:\n\n{e}"); st.stop()
+    st.error(f"Erro ao carregar banco de dados:\n\n{e}"); st.stop()
 
-if _modo_banco:
-    st.sidebar.success("🔌 Conectado ao banco Firebird")
+st.sidebar.success("🔌 Conectado ao banco Firebird")
 
 if _PG_DISPONIVEL:
     if _PG.is_available():
@@ -1041,8 +1019,7 @@ with tabs[8]:  # noqa: E305
         if _rac is not None and len(_rac):
             st.caption(f"POSTURA: {len(_rac[_rac.fase=='POSTURA'])} · RECRIA: {len(_rac[_rac.fase=='RECRIA'])}")
         else:
-            import ingest as _ING
-            st.error(f"⚠️ Pasta não encontrada ou vazia: `{_ING.PROD_DIR}`")
+            st.error("⚠️ Nenhum dado de produção/ração retornado pelo banco.")
         st.metric("Produção/Ovos (linhas)", len(_prod) if _prod is not None else 0,
                   help="Fase OVOS de '4 PRODUTOS PRODUZIDOS'")
     with _col2:
