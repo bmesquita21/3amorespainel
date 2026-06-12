@@ -3,11 +3,30 @@
 # O Nginx Proxy Manager roteia um domínio diferente para este container.
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: painel-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=painel3amores
+      - POSTGRES_USER=painel
+      - POSTGRES_PASSWORD=painel3amores2026
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U painel -d painel3amores"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   painel-db:
     build: .
     image: painel-3amores-db:latest
     container_name: painel-db
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
       - PAINEL_DADOS=/dados
       # Conexão direta com ERP Auditor (Firebird 4) — somente leitura
@@ -18,7 +37,16 @@ services:
       - FB_PASSWORD=3@mores
       - FB_CHARSET=UTF8
       - FB_CLIENT_LIBRARY=/usr/lib/x86_64-linux-gnu/libfbclient.so.2
+      # PostgreSQL auxiliar (parametrizações, extratos, usuários)
+      - PG_HOST=postgres
+      - PG_PORT=5432
+      - PG_DB=painel3amores
+      - PG_USER=painel
+      - PG_PASSWORD=painel3amores2026
     volumes:
       - /mnt/dados-painel:/dados
     ports:
       - "8501:8501"
+
+volumes:
+  postgres_data:

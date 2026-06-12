@@ -13,6 +13,14 @@ try:
 except ImportError:
     _DB_DISPONIVEL = False
 
+# --- PostgreSQL auxiliar (parametrizações, extratos, usuários) ---
+try:
+    import db_pg as _PG
+    import pg_migrate as _PGM
+    _PG_DISPONIVEL = True
+except ImportError:
+    _PG_DISPONIVEL = False
+
 st.set_page_config(page_title="Painel Financeiro 3 Amores", page_icon="🥚", layout="wide")
 _brand.aplicar()
 # Marca a página como pt-BR e "não traduzir": senão a tradução automática do navegador
@@ -27,6 +35,13 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # de ambiente PAINEL_DADOS; no uso local é a própria pasta do projeto. Mantém o CÓDIGO (git) separado
 # dos DADOS (SMB) — o `git pull` atualiza o código sem tocar nos dados.
 DADOS = os.environ.get("PAINEL_DADOS", ROOT)
+
+# --- PostgreSQL: inicializa schema e migra CSVs na primeira execução ---
+if _PG_DISPONIVEL and _PG.is_available():
+    try:
+        _PGM.migrate_all(os.path.join(DADOS, "config"))
+    except Exception as _e:
+        pass  # não impede o painel de abrir
 
 # --- Login: exige senha se existir <DADOS>/config/usuarios.yaml (servidor); senão libera (uso local) ---
 import auth as _auth

@@ -12,3 +12,5 @@ html5lib>=1.1
 fpdf2>=2.7
 # Conexão direta com banco Firebird (Auditor ERP)
 firebird-driver>=1.10
+# PostgreSQL auxiliar (parametrizações, extratos, usuários)
+psycopg2-binary>=2.9
