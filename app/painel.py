@@ -1040,90 +1040,172 @@ with tabs[8]:  # noqa: E305
 
     if _auth.is_admin():
         with _cfg_tabs[2]:
-            st.subheader("🔬 Diagnóstico — Estrutura do Banco Firebird")
-            st.caption("Ferramenta para inspecionar colunas e valores das tabelas do ERP, auxiliando na calibração das queries.")
-
-            _diag_tabela = st.selectbox(
-                "Tabela / View a inspecionar",
-                ["FATNOTAF", "VS_VENDAS", "VS_ITENS_VENDA", "VS_CONTASAPAGAR",
-                 "VS_CONTASARECEBER", "VS_ENTRADASAIDA"],
-                key="diag_tabela"
+            st.subheader("🔬 Explorador do Banco Firebird")
+            st.caption(
+                "Consulta direta às tabelas de sistema do Firebird (RDB$) — "
+                "mostra estrutura, tipos, relacionamentos e dados reais sem precisar de terminal."
             )
-            _diag_extra = st.text_input("Tabela personalizada (opcional)", key="diag_tabela_custom",
-                                        placeholder="Ex: FATCUPOMF, ESTPRODUF...")
-            _tabela_alvo = _diag_extra.strip().upper() if _diag_extra.strip() else _diag_tabela
+            from db import get_conn as _get_fb
 
-            if st.button("🔍 Inspecionar tabela", key="btn_diag"):
-                try:
-                    from db import get_conn as _get_fb
-                    _conn = _get_fb()
-                    _cur  = _conn.cursor()
+            _diag_sub = st.tabs(["📋 Listar tabelas", "🏛️ Estrutura da tabela", "🔗 Relacionamentos", "🔍 Dados / status"])
 
-                    # Colunas
-                    _cur.execute(f"SELECT FIRST 1 * FROM {_tabela_alvo}")
-                    _cols = [d[0] for d in _cur.description]
-                    st.markdown(f"**{len(_cols)} colunas em `{_tabela_alvo}`:**")
-                    st.code("  " + "\n  ".join(_cols))
-
-                    # Campos candidatos a status/situação/tipo
-                    _cands = [c for c in _cols if any(k in c.upper() for k in
-                        ("SITUA", "STATUS", "TIPO", "NATUR", "CANCEL", "CODOP", "OPERAC", "MOVIM", "MODAL"))]
-
-                    if _cands:
-                        st.markdown("**Valores distintos dos campos de status/tipo:**")
-                        for _col in _cands:
-                            try:
-                                _cur.execute(f"SELECT {_col}, COUNT(*) FROM {_tabela_alvo} "
-                                             f"GROUP BY {_col} ORDER BY COUNT(*) DESC")
-                                _rows = _cur.fetchall()
-                                _linhas = [f"`{repr(v)}` → {n} registros" for v, n in _rows]
-                                with st.expander(f"📋 {_col} ({len(_rows)} valores distintos)"):
-                                    st.markdown("\n\n".join(_linhas))
-                            except Exception as _e:
-                                st.caption(f"{_col}: {_e}")
-
-                    # JOIN rápido com VS_VENDAS se for FATNOTAF
-                    if _tabela_alvo == "FATNOTAF" and "CONT_NOTA" in _cols:
-                        st.markdown("**Volume por situação — JOIN com VS_VENDAS + VS_ITENS_VENDA:**")
-                        for _col in _cands:
-                            try:
-                                _cur.execute(f"""
-                                    SELECT f.{_col}, COUNT(DISTINCT f.CONT_NOTA) as notas,
-                                           SUM(i.SUBTOTAL) as total
-                                    FROM FATNOTAF f
-                                    JOIN VS_VENDAS v ON v.CONT_NOTA = f.CONT_NOTA
-                                    JOIN VS_ITENS_VENDA i ON i.CONT_NOTA = f.CONT_NOTA
-                                    WHERE v.DATAEMISSAO IS NOT NULL AND i.SUBTOTAL > 0
-                                    GROUP BY f.{_col}
-                                    ORDER BY notas DESC
-                                """)
-                                _jrows = _cur.fetchall()
-                                if _jrows:
-                                    _df_j = pd.DataFrame(_jrows, columns=["Valor", "Notas", "Total R$"])
-                                    _df_j["Total R$"] = _df_j["Total R$"].map(
-                                        lambda v: B.brl(float(v or 0)))
-                                    with st.expander(f"📊 Agrupado por {_col}"):
-                                        st.dataframe(_df_j, hide_index=True, use_container_width=True)
-                                    break
-                            except Exception:
-                                continue
-
-                    # Amostra
-                    st.markdown("**5 registros mais recentes:**")
+            # ── 1. Listar tabelas ────────────────────────────────────────────
+            with _diag_sub[0]:
+                _prefixo = st.text_input("Filtrar pelo início do nome (deixe vazio para listar tudo)",
+                                         value="FATNOTAF", key="diag_prefix")
+                if st.button("🔍 Buscar tabelas", key="btn_list"):
                     try:
-                        _cur.execute(f"SELECT FIRST 5 * FROM {_tabela_alvo} ORDER BY 1 DESC")
-                        _sample = [d[0] for d in _cur.description]
-                        _df_s = pd.DataFrame(_cur.fetchall(), columns=_sample)
-                        st.dataframe(_df_s, hide_index=True, use_container_width=True)
+                        _conn = _get_fb(); _cur = _conn.cursor()
+                        _like = f"{_prefixo.strip().upper()}%" if _prefixo.strip() else "%"
+                        _cur.execute("""
+                            SELECT TRIM(r.RDB$RELATION_NAME)   AS tabela,
+                                   TRIM(r.RDB$DESCRIPTION)     AS descricao,
+                                   COUNT(f.RDB$FIELD_NAME)     AS colunas,
+                                   CASE WHEN r.RDB$VIEW_BLR IS NULL THEN 'Tabela' ELSE 'View' END AS tipo
+                            FROM RDB$RELATIONS r
+                            LEFT JOIN RDB$RELATION_FIELDS f ON f.RDB$RELATION_NAME = r.RDB$RELATION_NAME
+                            WHERE r.RDB$SYSTEM_FLAG = 0
+                              AND r.RDB$RELATION_NAME LIKE ?
+                            GROUP BY r.RDB$RELATION_NAME, r.RDB$DESCRIPTION, r.RDB$VIEW_BLR
+                            ORDER BY r.RDB$RELATION_NAME
+                        """, (_like,))
+                        _rows = _cur.fetchall()
+                        _cur.close(); _conn.close()
+                        if _rows:
+                            _df_l = pd.DataFrame(_rows, columns=["Tabela", "Descrição", "Colunas", "Tipo"])
+                            st.success(f"{len(_rows)} tabela(s)/view(s) encontrada(s)")
+                            st.dataframe(_df_l, hide_index=True, use_container_width=True, height=400)
+                        else:
+                            st.warning("Nenhuma tabela encontrada com esse prefixo.")
                     except Exception as _e:
-                        st.caption(f"Amostra: {_e}")
+                        st.error(f"Erro: {_e}")
 
-                    _cur.close()
-                    _conn.close()
-                    st.success("✅ Inspeção concluída.")
+            # ── 2. Estrutura de uma tabela ───────────────────────────────────
+            with _diag_sub[1]:
+                _tbl = st.text_input("Nome exato da tabela", value="FATNOTAF01001", key="diag_tbl_struct")
+                if st.button("📐 Ver estrutura", key="btn_struct"):
+                    try:
+                        _conn = _get_fb(); _cur = _conn.cursor()
+                        _cur.execute("""
+                            SELECT
+                                TRIM(rf.RDB$FIELD_NAME)                        AS coluna,
+                                CASE ft.RDB$FIELD_TYPE
+                                    WHEN 7  THEN 'SMALLINT'
+                                    WHEN 8  THEN 'INTEGER'
+                                    WHEN 10 THEN 'FLOAT'
+                                    WHEN 12 THEN 'DATE'
+                                    WHEN 13 THEN 'TIME'
+                                    WHEN 14 THEN 'CHAR(' || ft.RDB$FIELD_LENGTH || ')'
+                                    WHEN 16 THEN CASE WHEN ft.RDB$FIELD_SUB_TYPE = 1 THEN 'NUMERIC(' || ft.RDB$FIELD_PRECISION || ',' || (-ft.RDB$FIELD_SCALE) || ')' ELSE 'BIGINT' END
+                                    WHEN 27 THEN 'DOUBLE'
+                                    WHEN 35 THEN 'TIMESTAMP'
+                                    WHEN 37 THEN 'VARCHAR(' || ft.RDB$FIELD_LENGTH || ')'
+                                    WHEN 261 THEN 'BLOB'
+                                    ELSE 'TIPO_' || ft.RDB$FIELD_TYPE
+                                END                                            AS tipo,
+                                CASE rf.RDB$NULL_FLAG WHEN 1 THEN 'NÃO' ELSE 'SIM' END AS aceita_null,
+                                TRIM(rf.RDB$DEFAULT_SOURCE)                    AS default_val,
+                                TRIM(rf.RDB$DESCRIPTION)                       AS descricao
+                            FROM RDB$RELATION_FIELDS rf
+                            JOIN RDB$FIELDS ft ON ft.RDB$FIELD_NAME = rf.RDB$FIELD_SOURCE
+                            WHERE rf.RDB$RELATION_NAME = ?
+                            ORDER BY rf.RDB$FIELD_POSITION
+                        """, (_tbl.strip().upper(),))
+                        _rows = _cur.fetchall()
+                        _cur.close(); _conn.close()
+                        if _rows:
+                            _df_st = pd.DataFrame(_rows, columns=["Coluna", "Tipo", "Aceita NULL", "Default", "Descrição"])
+                            st.success(f"{len(_rows)} coluna(s) em `{_tbl.strip().upper()}`")
+                            st.dataframe(_df_st, hide_index=True, use_container_width=True, height=500)
+                        else:
+                            st.warning("Tabela não encontrada ou sem colunas.")
+                    except Exception as _e:
+                        st.error(f"Erro: {_e}")
 
-                except Exception as _e:
-                    st.error(f"Erro ao inspecionar `{_tabela_alvo}`: {_e}")
+            # ── 3. Relacionamentos (FK) ──────────────────────────────────────
+            with _diag_sub[2]:
+                _tbl_fk = st.text_input("Nome da tabela", value="FATNOTAF01001", key="diag_tbl_fk")
+                if st.button("🔗 Ver relacionamentos", key="btn_fk"):
+                    try:
+                        _conn = _get_fb(); _cur = _conn.cursor()
+                        # FKs que SAEM desta tabela
+                        _cur.execute("""
+                            SELECT
+                                TRIM(rc.RDB$CONSTRAINT_NAME)                  AS fk_nome,
+                                TRIM(idx_seg.RDB$FIELD_NAME)                  AS coluna_origem,
+                                TRIM(rc2.RDB$RELATION_NAME)                   AS tabela_destino,
+                                TRIM(idx_seg2.RDB$FIELD_NAME)                 AS coluna_destino
+                            FROM RDB$REF_CONSTRAINTS ref
+                            JOIN RDB$RELATION_CONSTRAINTS rc  ON rc.RDB$CONSTRAINT_NAME  = ref.RDB$CONSTRAINT_NAME
+                            JOIN RDB$RELATION_CONSTRAINTS rc2 ON rc2.RDB$CONSTRAINT_NAME = ref.RDB$CONST_NAME_UQ
+                            JOIN RDB$INDEX_SEGMENTS idx_seg  ON idx_seg.RDB$INDEX_NAME  = rc.RDB$INDEX_NAME
+                            JOIN RDB$INDEX_SEGMENTS idx_seg2 ON idx_seg2.RDB$INDEX_NAME = rc2.RDB$INDEX_NAME
+                            WHERE rc.RDB$RELATION_NAME = ?
+                            ORDER BY fk_nome
+                        """, (_tbl_fk.strip().upper(),))
+                        _fk_out = _cur.fetchall()
+
+                        # FKs que CHEGAM nesta tabela
+                        _cur.execute("""
+                            SELECT
+                                TRIM(rc.RDB$RELATION_NAME)                    AS tabela_origem,
+                                TRIM(idx_seg.RDB$FIELD_NAME)                  AS coluna_origem,
+                                TRIM(idx_seg2.RDB$FIELD_NAME)                 AS coluna_destino
+                            FROM RDB$REF_CONSTRAINTS ref
+                            JOIN RDB$RELATION_CONSTRAINTS rc  ON rc.RDB$CONSTRAINT_NAME  = ref.RDB$CONSTRAINT_NAME
+                            JOIN RDB$RELATION_CONSTRAINTS rc2 ON rc2.RDB$CONSTRAINT_NAME = ref.RDB$CONST_NAME_UQ
+                            JOIN RDB$INDEX_SEGMENTS idx_seg  ON idx_seg.RDB$INDEX_NAME  = rc.RDB$INDEX_NAME
+                            JOIN RDB$INDEX_SEGMENTS idx_seg2 ON idx_seg2.RDB$INDEX_NAME = rc2.RDB$INDEX_NAME
+                            WHERE rc2.RDB$RELATION_NAME = ?
+                            ORDER BY tabela_origem
+                        """, (_tbl_fk.strip().upper(),))
+                        _fk_in = _cur.fetchall()
+                        _cur.close(); _conn.close()
+
+                        if _fk_out:
+                            st.markdown(f"**Chaves estrangeiras que saem de `{_tbl_fk.strip().upper()}`:**")
+                            _df_fo = pd.DataFrame(_fk_out, columns=["FK Nome", "Coluna aqui", "Tabela destino", "Coluna destino"])
+                            st.dataframe(_df_fo, hide_index=True, use_container_width=True)
+                        else:
+                            st.info("Nenhuma FK saindo desta tabela.")
+
+                        if _fk_in:
+                            st.markdown(f"**Tabelas que referenciam `{_tbl_fk.strip().upper()}`:**")
+                            _df_fi = pd.DataFrame(_fk_in, columns=["Tabela origem", "Coluna lá", "Coluna aqui"])
+                            st.dataframe(_df_fi, hide_index=True, use_container_width=True)
+                        else:
+                            st.info("Nenhuma tabela referencia esta tabela.")
+                    except Exception as _e:
+                        st.error(f"Erro: {_e}")
+
+            # ── 4. Dados / valores distintos ────────────────────────────────
+            with _diag_sub[3]:
+                _tbl_d = st.text_input("Nome da tabela", value="FATNOTAF01001", key="diag_tbl_data")
+                _col_d = st.text_input("Coluna para ver valores distintos (ex: TIPONF, SITUACAO)",
+                                       key="diag_col_data", placeholder="deixe vazio para ver amostra")
+                if st.button("🔍 Consultar", key="btn_data"):
+                    try:
+                        _conn = _get_fb(); _cur = _conn.cursor()
+                        _t = _tbl_d.strip().upper()
+                        _c = _col_d.strip().upper()
+                        if _c:
+                            # Valores distintos + contagem
+                            _cur.execute(f"SELECT {_c}, COUNT(*) FROM {_t} GROUP BY {_c} ORDER BY COUNT(*) DESC")
+                            _rows = _cur.fetchall()
+                            st.markdown(f"**Valores distintos de `{_c}` em `{_t}`:**")
+                            _df_d = pd.DataFrame(_rows, columns=["Valor", "Registros"])
+                            st.dataframe(_df_d, hide_index=True, use_container_width=True)
+                        else:
+                            # Amostra das primeiras 20 linhas
+                            _cur.execute(f"SELECT FIRST 20 * FROM {_t}")
+                            _cols_s = [d[0] for d in _cur.description]
+                            _rows_s = _cur.fetchall()
+                            st.markdown(f"**20 primeiros registros de `{_t}`:**")
+                            st.dataframe(pd.DataFrame(_rows_s, columns=_cols_s),
+                                         hide_index=True, use_container_width=True)
+                        _cur.close(); _conn.close()
+                    except Exception as _e:
+                        st.error(f"Erro: {_e}")
 
 # ---------------- Importar Dados ----------------
 with tabs[9]:
