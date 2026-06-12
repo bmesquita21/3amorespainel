@@ -175,6 +175,12 @@ except Exception as e:
 if _modo_banco:
     st.sidebar.success("🔌 Conectado ao banco Firebird")
 
+if _PG_DISPONIVEL:
+    if _PG.is_available():
+        st.sidebar.success("🐘 PostgreSQL conectado")
+    else:
+        st.sidebar.warning("🐘 PostgreSQL indisponível")
+
 cfg_obj = C.load(os.path.join(pasta, "config"))
 periodos = dfs["periodos"]
 if not periodos:
