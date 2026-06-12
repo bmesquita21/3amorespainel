@@ -24,6 +24,42 @@ def _load_env():
 
 _load_env()
 
+# Configura o caminho da biblioteca Firebird no nível do módulo,
+# antes de qualquer import de firebird.driver (evita _client=None).
+def _configure_firebird_client():
+    lib = os.environ.get("FB_CLIENT_LIBRARY", "")
+    if not lib:
+        if sys.platform == "win32":
+            for p in [
+                r"C:\Program Files (x86)\HK-Software\IBExpert\firebird4\fbclient.dll",
+                r"C:\Program Files\Firebird\Firebird_4_0\fbclient.dll",
+                r"C:\Program Files\Firebird\Firebird_3_0\fbclient.dll",
+            ]:
+                if os.path.isfile(p):
+                    lib = p
+                    break
+        else:
+            for p in [
+                "/usr/lib/x86_64-linux-gnu/libfbclient.so.2",
+                "libfbclient.so.2",
+                "libfbclient.so",
+            ]:
+                if p.startswith("/"):
+                    if os.path.isfile(p):
+                        lib = p
+                        break
+                else:
+                    lib = p
+                    break
+    if lib:
+        try:
+            from firebird.driver import driver_config
+            driver_config.fb_client_library.value = lib
+        except Exception:
+            pass
+
+_configure_firebird_client()
+
 def _resolve_client_lib() -> str:
     """Resolve o caminho da biblioteca cliente Firebird por plataforma."""
     # Variável de ambiente tem prioridade (Docker injeta FB_CLIENT_LIBRARY)
@@ -62,13 +98,7 @@ def get_conn():
     """Retorna conexão DBAPI2 com o Firebird.
     Use como context manager ou chame .close() ao terminar.
     """
-    from firebird.driver import connect, create_client
-
-    client_lib = _resolve_client_lib()
-    kwargs = {}
-    if client_lib:
-        kwargs["fb_library_filename"] = client_lib
-    client = create_client(**kwargs)
+    from firebird.driver import connect
 
     host = os.environ.get("FB_HOST", "192.168.100.201")
     port = os.environ.get("FB_PORT", "3050")
@@ -81,7 +111,6 @@ def get_conn():
         user=user,
         password=pwd,
         charset=os.environ.get("FB_CHARSET", "WIN1252"),
-        client=client,
     )
 
 def db_disponivel() -> bool:
