@@ -1003,35 +1003,127 @@ with tabs[7]:
 
 # ---------------- Config ----------------
 with tabs[8]:  # noqa: E305
-    st.subheader("⚙️ Configurações")
-    if _CFG_PG is not None:
-        _CFG_PG.render(pasta)
-    else:
-        st.warning("Módulo config_pg não disponível.")
-        cfgdir = os.path.join(pasta, "config")
-        for fn in ["config_contas.csv", "config_centros_custo.csv", "config_produtos.csv"]:
-            fp = os.path.join(cfgdir, fn)
-            if os.path.exists(fp):
-                with st.expander(fn):
-                    try: st.dataframe(pd.read_csv(fp, sep=";", encoding="utf-8-sig"), hide_index=True, height=280, use_container_width=True)
-                    except Exception as e: st.write(f"(erro: {e})")
-    st.divider()
-    st.subheader("📊 Status dos dados carregados")
-    _rac = dfs.get("racao"); _prod = dfs.get("producao"); _desp = dfs.get("despesa"); _rec = dfs.get("receita")
-    _col1, _col2 = st.columns(2)
-    with _col1:
-        st.metric("Ração (linhas)", len(_rac) if _rac is not None else 0,
-                  help="POSTURA + RECRIA de '4 PRODUTOS PRODUZIDOS'")
-        if _rac is not None and len(_rac):
-            st.caption(f"POSTURA: {len(_rac[_rac.fase=='POSTURA'])} · RECRIA: {len(_rac[_rac.fase=='RECRIA'])}")
+    _cfg_abas = ["⚙️ Parâmetros", "📊 Status", "🔬 Diagnóstico BD"] if _auth.is_admin() else ["⚙️ Parâmetros", "📊 Status"]
+    _cfg_tabs = st.tabs(_cfg_abas)
+
+    with _cfg_tabs[0]:
+        st.subheader("⚙️ Configurações")
+        if _CFG_PG is not None:
+            _CFG_PG.render(pasta)
         else:
-            st.error("⚠️ Nenhum dado de produção/ração retornado pelo banco.")
-        st.metric("Produção/Ovos (linhas)", len(_prod) if _prod is not None else 0,
-                  help="Fase OVOS de '4 PRODUTOS PRODUZIDOS'")
-    with _col2:
-        st.metric("Despesas (linhas)", len(_desp) if _desp is not None else 0)
-        st.metric("Receita (linhas)", len(_rec) if _rec is not None else 0)
-    st.caption(f"Pasta de dados: `{pasta}`")
+            st.warning("Módulo config_pg não disponível.")
+            cfgdir = os.path.join(pasta, "config")
+            for fn in ["config_contas.csv", "config_centros_custo.csv", "config_produtos.csv"]:
+                fp = os.path.join(cfgdir, fn)
+                if os.path.exists(fp):
+                    with st.expander(fn):
+                        try: st.dataframe(pd.read_csv(fp, sep=";", encoding="utf-8-sig"), hide_index=True, height=280, use_container_width=True)
+                        except Exception as e: st.write(f"(erro: {e})")
+
+    with _cfg_tabs[1]:
+        st.subheader("📊 Status dos dados carregados")
+        _rac = dfs.get("racao"); _prod = dfs.get("producao"); _desp = dfs.get("despesa"); _rec = dfs.get("receita")
+        _col1, _col2 = st.columns(2)
+        with _col1:
+            st.metric("Ração (linhas)", len(_rac) if _rac is not None else 0,
+                      help="POSTURA + RECRIA de '4 PRODUTOS PRODUZIDOS'")
+            if _rac is not None and len(_rac):
+                st.caption(f"POSTURA: {len(_rac[_rac.fase=='POSTURA'])} · RECRIA: {len(_rac[_rac.fase=='RECRIA'])}")
+            else:
+                st.error("⚠️ Nenhum dado de produção/ração retornado pelo banco.")
+            st.metric("Produção/Ovos (linhas)", len(_prod) if _prod is not None else 0,
+                      help="Fase OVOS de '4 PRODUTOS PRODUZIDOS'")
+        with _col2:
+            st.metric("Despesas (linhas)", len(_desp) if _desp is not None else 0)
+            st.metric("Receita (linhas)", len(_rec) if _rec is not None else 0)
+        st.caption(f"Pasta de dados: `{pasta}`")
+
+    if _auth.is_admin():
+        with _cfg_tabs[2]:
+            st.subheader("🔬 Diagnóstico — Estrutura do Banco Firebird")
+            st.caption("Ferramenta para inspecionar colunas e valores das tabelas do ERP, auxiliando na calibração das queries.")
+
+            _diag_tabela = st.selectbox(
+                "Tabela / View a inspecionar",
+                ["FATNOTAF", "VS_VENDAS", "VS_ITENS_VENDA", "VS_CONTASAPAGAR",
+                 "VS_CONTASARECEBER", "VS_ENTRADASAIDA"],
+                key="diag_tabela"
+            )
+            _diag_extra = st.text_input("Tabela personalizada (opcional)", key="diag_tabela_custom",
+                                        placeholder="Ex: FATCUPOMF, ESTPRODUF...")
+            _tabela_alvo = _diag_extra.strip().upper() if _diag_extra.strip() else _diag_tabela
+
+            if st.button("🔍 Inspecionar tabela", key="btn_diag"):
+                try:
+                    from db import get_conn as _get_fb
+                    _conn = _get_fb()
+                    _cur  = _conn.cursor()
+
+                    # Colunas
+                    _cur.execute(f"SELECT FIRST 1 * FROM {_tabela_alvo}")
+                    _cols = [d[0] for d in _cur.description]
+                    st.markdown(f"**{len(_cols)} colunas em `{_tabela_alvo}`:**")
+                    st.code("  " + "\n  ".join(_cols))
+
+                    # Campos candidatos a status/situação/tipo
+                    _cands = [c for c in _cols if any(k in c.upper() for k in
+                        ("SITUA", "STATUS", "TIPO", "NATUR", "CANCEL", "CODOP", "OPERAC", "MOVIM", "MODAL"))]
+
+                    if _cands:
+                        st.markdown("**Valores distintos dos campos de status/tipo:**")
+                        for _col in _cands:
+                            try:
+                                _cur.execute(f"SELECT {_col}, COUNT(*) FROM {_tabela_alvo} "
+                                             f"GROUP BY {_col} ORDER BY COUNT(*) DESC")
+                                _rows = _cur.fetchall()
+                                _linhas = [f"`{repr(v)}` → {n} registros" for v, n in _rows]
+                                with st.expander(f"📋 {_col} ({len(_rows)} valores distintos)"):
+                                    st.markdown("\n\n".join(_linhas))
+                            except Exception as _e:
+                                st.caption(f"{_col}: {_e}")
+
+                    # JOIN rápido com VS_VENDAS se for FATNOTAF
+                    if _tabela_alvo == "FATNOTAF" and "CONT_NOTA" in _cols:
+                        st.markdown("**Volume por situação — JOIN com VS_VENDAS + VS_ITENS_VENDA:**")
+                        for _col in _cands:
+                            try:
+                                _cur.execute(f"""
+                                    SELECT f.{_col}, COUNT(DISTINCT f.CONT_NOTA) as notas,
+                                           SUM(i.SUBTOTAL) as total
+                                    FROM FATNOTAF f
+                                    JOIN VS_VENDAS v ON v.CONT_NOTA = f.CONT_NOTA
+                                    JOIN VS_ITENS_VENDA i ON i.CONT_NOTA = f.CONT_NOTA
+                                    WHERE v.DATAEMISSAO IS NOT NULL AND i.SUBTOTAL > 0
+                                    GROUP BY f.{_col}
+                                    ORDER BY notas DESC
+                                """)
+                                _jrows = _cur.fetchall()
+                                if _jrows:
+                                    _df_j = pd.DataFrame(_jrows, columns=["Valor", "Notas", "Total R$"])
+                                    _df_j["Total R$"] = _df_j["Total R$"].map(
+                                        lambda v: B.brl(float(v or 0)))
+                                    with st.expander(f"📊 Agrupado por {_col}"):
+                                        st.dataframe(_df_j, hide_index=True, use_container_width=True)
+                                    break
+                            except Exception:
+                                continue
+
+                    # Amostra
+                    st.markdown("**5 registros mais recentes:**")
+                    try:
+                        _cur.execute(f"SELECT FIRST 5 * FROM {_tabela_alvo} ORDER BY 1 DESC")
+                        _sample = [d[0] for d in _cur.description]
+                        _df_s = pd.DataFrame(_cur.fetchall(), columns=_sample)
+                        st.dataframe(_df_s, hide_index=True, use_container_width=True)
+                    except Exception as _e:
+                        st.caption(f"Amostra: {_e}")
+
+                    _cur.close()
+                    _conn.close()
+                    st.success("✅ Inspeção concluída.")
+
+                except Exception as _e:
+                    st.error(f"Erro ao inspecionar `{_tabela_alvo}`: {_e}")
 
 # ---------------- Importar Dados ----------------
 with tabs[9]:
