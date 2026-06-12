@@ -23,22 +23,26 @@ class Configs:
         if not _pg_ok:
             self._init_from_csv(cfg_dir)
 
+    # ── PG-first ────────────────────────────────────────────────────────────
+
     def _init_from_pg(self, pg, cfg_dir):
         contas = pg.fetch_contas()
         self.conta2linha = {r["nome_conta"].strip().upper(): r["linha_dre"] for r in contas}
         self.conta2nat   = {r["nome_conta"].strip().upper(): (r["natureza"], r.get("tipo_estoque", "")) for r in contas}
-
         self.cc2info = {r["centro_custo"].strip().upper(): r for r in pg.fetch_centros_custo()}
         self.prod2   = {r["produto_original"].strip(): r for r in pg.fetch_produtos()}
-
         self.forn2linha, self.forn2nat = {}, {}
         for r in pg.fetch_fornecedores():
             k = r["credor"].strip().upper()
             self.forn2linha[k] = r["linha_dre"]
             self.forn2nat[k]   = (r["natureza"], r.get("tipo_estoque", ""))
-
-        self._load_file_extras(cfg_dir)
+        try: self.layout = _load(cfg_dir, "config_layout_dre.csv")
+        except Exception: self.layout = []
+        self._init_composicao(pg, cfg_dir)
+        self._init_lotes(pg, cfg_dir)
         self._load_config_geral(pg, cfg_dir)
+
+    # ── CSV fallback ─────────────────────────────────────────────────────────
 
     def _init_from_csv(self, cfg_dir):
         cr = _load(cfg_dir, "config_contas.csv")
@@ -54,14 +58,29 @@ class Configs:
                 self.forn2nat[k]   = (r["natureza"], r.get("tipo_estoque", ""))
         except Exception:
             pass
-        self._load_file_extras(cfg_dir)
-        self._load_config_geral(None, cfg_dir)
-
-    def _load_file_extras(self, cfg_dir):
         try: self.layout = _load(cfg_dir, "config_layout_dre.csv")
         except Exception: self.layout = []
+        self._init_composicao(None, cfg_dir)
+        self._init_lotes(None, cfg_dir)
+        self._load_config_geral(None, cfg_dir)
 
+    # ── Composição ──────────────────────────────────────────────────────────
+
+    def _init_composicao(self, pg, cfg_dir):
         self.comp, embs, eggs = {}, [], []
+        if pg is not None:
+            try:
+                for r in pg.fetch_composicao():
+                    nk = r["produto_norm"].strip()
+                    e  = float(r.get("emb_por_caixa") or 0)
+                    o  = float(r.get("ovos_por_caixa") or 0)
+                    self.comp[nk] = e
+                    if o > 0: embs.append(e); eggs.append(o)
+                self.comp_emb_per_egg = (sum(embs) / sum(eggs)) if eggs else 0.058
+                return
+            except Exception:
+                self.comp, embs, eggs = {}, [], []
+        # CSV fallback
         try:
             for r in _load(cfg_dir, "config_composicao.csv"):
                 nk = r["produto_norm"].strip()
@@ -72,17 +91,30 @@ class Configs:
         except Exception: pass
         self.comp_emb_per_egg = (sum(embs) / sum(eggs)) if eggs else 0.058
 
+    # ── Lotes ────────────────────────────────────────────────────────────────
+
+    def _init_lotes(self, pg, cfg_dir):
         self.lote = {}
+        if pg is not None:
+            try:
+                rows = pg.fetch_lotes()
+                if rows:
+                    # converte Decimal/int para str para compatibilidade com biological.py
+                    self.lote = {k: str(v) for k, v in rows[0].items()}
+                    return
+            except Exception:
+                pass
         try:
             lr = _load(cfg_dir, "config_lotes.csv")
             if lr: self.lote = lr[0]
         except Exception: pass
 
+    # ── Config geral ─────────────────────────────────────────────────────────
+
     def _load_config_geral(self, pg, cfg_dir):
         self.capital_social = 0.0
         self.saldo_caixa_inicial = 0.0
         self.biologico_default = True
-
         if pg is not None:
             try:
                 geral = pg.fetch_config_geral()
@@ -93,7 +125,6 @@ class Configs:
                     return
             except Exception:
                 pass
-
         if yaml is not None:
             try:
                 with open(os.path.join(cfg_dir, "config_geral.yaml"), encoding="utf-8") as f:

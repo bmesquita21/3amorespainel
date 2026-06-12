@@ -351,9 +351,17 @@ def passivo_pl_extras(tx, periodo_fim, overrides=None):
     return b["adiant"], b["aporte"]
 
 def carregar_overrides(base):
-    """Lê rótulos manuais de natureza de qualquer planilha 'credito*/natureza/classific*' na raiz ou config/.
-    Casa por coluna 'tid'/'id' se houver; SENÃO recalcula o tid de banco/conta/data/valor (funciona com a
-    planilha antiga, sem coluna id) -> nada do que a Sabrina preencheu se perde."""
+    """Lê rótulos manuais. Tenta PostgreSQL primeiro; fallback para planilha/CSV."""
+    # PG-first
+    try:
+        import db_pg as _pg
+        if _pg.is_available():
+            ov = _pg.fetch_correcoes()
+            if ov:
+                return ov
+    except Exception:
+        pass
+    # Fallback: varre arquivos 'credito*/natureza/classific*' na raiz ou config/
     import glob
     files = []
     for d in (base, os.path.join(base, "config")):
@@ -389,11 +397,24 @@ def carregar_overrides(base):
             if key: ov[key] = nat
     return ov
 
+
 def salvar_correcoes(base, mapa):
-    """Grava/atualiza correções manuais de classificação (merge por tid) em
-    config/correcoes_classificacao.csv — esse arquivo é lido de volta por carregar_overrides.
-    mapa: {tid: {natureza, banco, data, valor, desc}}. Devolve o nº de correções aplicadas."""
+    """Grava/atualiza correções manuais de classificação. PG-first, fallback CSV."""
     if not mapa: return 0
+    # PG-first
+    try:
+        import db_pg as _pg
+        if _pg.is_available():
+            for tid, info in mapa.items():
+                _pg.upsert_correcao(
+                    str(tid), str(info.get("natureza","")).strip(),
+                    str(info.get("banco","")), str(info.get("data","")),
+                    str(info.get("valor","")), str(info.get("desc",""))
+                )
+            return len(mapa)
+    except Exception:
+        pass
+    # Fallback CSV
     fp = os.path.join(base, "config", "correcoes_classificacao.csv")
     atual = {}
     if os.path.exists(fp):

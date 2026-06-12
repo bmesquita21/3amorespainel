@@ -103,7 +103,7 @@ def render(pasta: str):
         _render_somente_leitura(pasta)
         return
 
-    sub = st.tabs(["📋 Contas", "🏢 Centros de Custo", "🏭 Fornecedores", "📦 Produtos"])
+    sub = st.tabs(["📋 Contas", "🏢 Centros de Custo", "🏭 Fornecedores", "📦 Produtos", "🥚 Composição", "🐔 Lotes"])
 
     # ── Contas ──────────────────────────────────────────────────────────────
     with sub[0]:
@@ -275,6 +275,112 @@ def render(pasta: str):
                     st.cache_data.clear()
                 else:
                     st.info("Nenhuma alteração detectada.")
+
+
+    # ── Composição ───────────────────────────────────────────────────────────
+    with sub[4]:
+        st.caption("Custo de embalagem e quantidade de ovos por caixa — usado no cálculo do CMV embalagem.")
+        df = _df("SELECT id,produto_norm,produto_original,ovos_por_caixa,emb_por_caixa,total_por_caixa,unidade,ativo FROM config_composicao ORDER BY produto_norm")
+        if df.empty:
+            st.info("Nenhuma composição cadastrada.")
+        else:
+            orig = df.copy()
+            edited = st.data_editor(
+                df, hide_index=True, use_container_width=True, height=380,
+                disabled=["id", "produto_norm"],
+                column_config={
+                    "id":               st.column_config.NumberColumn("ID", width="small"),
+                    "produto_norm":     st.column_config.TextColumn("Produto (chave)", width="large"),
+                    "produto_original": st.column_config.TextColumn("Descrição original", width="large"),
+                    "ovos_por_caixa":   st.column_config.NumberColumn("Ovos/caixa", min_value=0, format="%.0f"),
+                    "emb_por_caixa":    st.column_config.NumberColumn("Emb. R$/caixa", min_value=0, format="%.4f"),
+                    "total_por_caixa":  st.column_config.NumberColumn("Total R$/caixa", min_value=0, format="%.4f"),
+                    "unidade":          st.column_config.TextColumn("Unidade", width="medium"),
+                    "ativo":            st.column_config.CheckboxColumn("Ativo", width="small"),
+                },
+            )
+            if st.button("💾 Salvar composição", type="primary"):
+                changed = edited[edited.ne(orig).any(axis=1)]
+                if changed.empty:
+                    st.info("Nenhuma alteração detectada.")
+                else:
+                    for _, r in changed.iterrows():
+                        PG.execute(
+                            "UPDATE config_composicao SET produto_original=%s,ovos_por_caixa=%s,emb_por_caixa=%s,"
+                            "total_por_caixa=%s,unidade=%s,ativo=%s,updated_at=NOW() WHERE id=%s",
+                            (r["produto_original"], float(r["ovos_por_caixa"]), float(r["emb_por_caixa"]),
+                             float(r["total_por_caixa"]), r["unidade"], bool(r["ativo"]), int(r["id"]))
+                        )
+                    st.success(f"{len(changed)} linha(s) atualizada(s).")
+                    st.cache_data.clear()
+        st.divider()
+        st.markdown("#### ➕ Nova composição")
+        with st.form("form_nova_comp", clear_on_submit=True):
+            c1, c2 = st.columns(2)
+            pnorm = c1.text_input("Produto (chave normalizada)", placeholder="EX: CX OVOS CAIPIRA TIPO GRANDE 12 CRIVO DE 20 TRES AMORES")
+            porig = c2.text_input("Descrição original")
+            c3, c4, c5, c6 = st.columns(4)
+            ovos  = c3.number_input("Ovos/caixa", min_value=0, value=240, step=1)
+            emb   = c4.number_input("Emb. R$/caixa", min_value=0.0, value=0.0, format="%.4f")
+            tot   = c5.number_input("Total R$/caixa", min_value=0.0, value=0.0, format="%.4f")
+            uni   = c6.selectbox("Unidade", ["Fazenda", "Silveira", ""])
+            if st.form_submit_button("Adicionar", type="primary"):
+                if pnorm.strip():
+                    try:
+                        PG.execute(
+                            "INSERT INTO config_composicao(produto_norm,produto_original,ovos_por_caixa,emb_por_caixa,total_por_caixa,unidade) "
+                            "VALUES(%s,%s,%s,%s,%s,%s)",
+                            (pnorm.strip().upper(), porig.strip(), ovos, emb, tot, uni)
+                        )
+                        st.success(f"Composição '{pnorm.upper()}' adicionada!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(str(e))
+                else:
+                    st.warning("Preencha a chave do produto.")
+
+    # ── Lotes ─────────────────────────────────────────────────────────────────
+    with sub[5]:
+        st.caption("Lotes do plantel de poedeiras — controla a amortização do ativo biológico.")
+        df = _df("SELECT id,lote_id,fonte_recria,data_entrada_recria,data_inicio_postura,galpao_postura,grupo_galpao,n_aves,ciclo_postura_meses,metodo_amortizacao,ativo FROM config_lotes ORDER BY lote_id")
+        if df.empty:
+            st.info("Nenhum lote cadastrado.")
+        else:
+            orig = df.copy()
+            edited = st.data_editor(
+                df, hide_index=True, use_container_width=True, height=200,
+                disabled=["id", "lote_id"],
+                column_config={
+                    "id":                   st.column_config.NumberColumn("ID", width="small"),
+                    "lote_id":              st.column_config.TextColumn("Lote ID", width="small"),
+                    "fonte_recria":         st.column_config.TextColumn("Fonte recria", width="medium"),
+                    "data_entrada_recria":  st.column_config.TextColumn("Entrada recria (AAAA-MM)", width="medium"),
+                    "data_inicio_postura":  st.column_config.TextColumn("Início postura (AAAA-MM)", width="medium"),
+                    "galpao_postura":       st.column_config.TextColumn("Galpão postura", width="small"),
+                    "grupo_galpao":         st.column_config.TextColumn("Grupo galpão", width="medium"),
+                    "n_aves":               st.column_config.NumberColumn("Nº aves", min_value=0),
+                    "ciclo_postura_meses":  st.column_config.NumberColumn("Ciclo (meses)", min_value=1, max_value=36),
+                    "metodo_amortizacao":   st.column_config.SelectboxColumn("Método", options=["LINEAR"], width="small"),
+                    "ativo":                st.column_config.CheckboxColumn("Ativo", width="small"),
+                },
+            )
+            if st.button("💾 Salvar lotes", type="primary"):
+                changed = edited[edited.ne(orig).any(axis=1)]
+                if changed.empty:
+                    st.info("Nenhuma alteração detectada.")
+                else:
+                    for _, r in changed.iterrows():
+                        PG.execute(
+                            "UPDATE config_lotes SET fonte_recria=%s,data_entrada_recria=%s,data_inicio_postura=%s,"
+                            "galpao_postura=%s,grupo_galpao=%s,n_aves=%s,ciclo_postura_meses=%s,"
+                            "metodo_amortizacao=%s,ativo=%s,updated_at=NOW() WHERE id=%s",
+                            (r["fonte_recria"], r["data_entrada_recria"], r["data_inicio_postura"],
+                             r["galpao_postura"], r["grupo_galpao"], int(r["n_aves"]),
+                             int(r["ciclo_postura_meses"]), r["metodo_amortizacao"],
+                             bool(r["ativo"]), int(r["id"]))
+                        )
+                    st.success(f"{len(changed)} lote(s) atualizado(s).")
+                    st.cache_data.clear()
 
 
 def _render_somente_leitura(pasta: str):

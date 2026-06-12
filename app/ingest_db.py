@@ -384,6 +384,28 @@ def ingest_racao_db(conn=None) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+# ─── Imobilizado (lê do PostgreSQL) ─────────────────────────────────────────
+
+def ingest_imob_db() -> pd.DataFrame:
+    """Lê imobilizado salvo no PostgreSQL (via tela de upload)."""
+    try:
+        import db_pg as _PG
+        if not _PG.is_available():
+            return pd.DataFrame()
+        rows = _PG.fetch_imobilizado()
+        if not rows:
+            return pd.DataFrame()
+        df = pd.DataFrame(rows)
+        df = df.rename(columns={"data_aquisicao": "acq"})
+        # garante tipos numéricos (psycopg2 pode retornar Decimal)
+        for col in ("valor_aquisicao", "valor_pago", "saldo_a_pagar", "deprec_mensal", "valor_liquido"):
+            if col in df.columns:
+                df[col] = df[col].astype(float)
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+
 # ─── Ponto de entrada ────────────────────────────────────────────────────────
 
 def load_all_db(cfg, conn=None) -> dict:
@@ -435,7 +457,7 @@ def load_all_db(cfg, conn=None) -> dict:
 
     return dict(
         despesa=desp, receita=rec, racao=rac, producao=prod,
-        imob=pd.DataFrame(),
+        imob=ingest_imob_db(),
         fc_saidas=fc_sai, fc_entradas=fc_ent,
         fc_dropped=[], dropped=[],
         periodos=sorted(pers),

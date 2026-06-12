@@ -80,6 +80,55 @@ def migrate_all(cfg_dir: str):
                   "marca":   r.get("marca","").strip()} for r in rows]
             )
 
+    if _tabela_vazia("config_composicao"):
+        rows = _load_csv(os.path.join(cfg_dir, "config_composicao.csv"))
+        if rows:
+            PG.executemany(
+                "INSERT INTO config_composicao(produto_norm,produto_original,ovos_por_caixa,emb_por_caixa,total_por_caixa,unidade) "
+                "VALUES(%(produto_norm)s,%(produto_original)s,%(ovos_por_caixa)s,%(emb_por_caixa)s,%(total_por_caixa)s,%(unidade)s) "
+                "ON CONFLICT(produto_norm) DO NOTHING",
+                [{"produto_norm":     r.get("produto_norm","").strip().upper(),
+                  "produto_original": r.get("produto_original","").strip(),
+                  "ovos_por_caixa":   float(str(r.get("ovos_por_caixa","0")).replace(",",".") or 0),
+                  "emb_por_caixa":    float(str(r.get("emb_por_caixa","0")).replace(",",".") or 0),
+                  "total_por_caixa":  float(str(r.get("total_por_caixa","0")).replace(",",".") or 0),
+                  "unidade":          r.get("unidade","").strip()} for r in rows]
+            )
+
+    if _tabela_vazia("config_lotes"):
+        rows = _load_csv(os.path.join(cfg_dir, "config_lotes.csv"))
+        for r in rows:
+            PG.execute(
+                "INSERT INTO config_lotes(lote_id,fonte_recria,data_entrada_recria,data_inicio_postura,"
+                "galpao_postura,grupo_galpao,n_aves,ciclo_postura_meses,metodo_amortizacao) "
+                "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(lote_id) DO NOTHING",
+                (r.get("lote_id","").strip(), r.get("fonte_recria","").strip(),
+                 r.get("data_entrada_recria","").strip(), r.get("data_inicio_postura","").strip(),
+                 r.get("galpao_postura","").strip(), r.get("grupo_galpao","").strip(),
+                 int(float(r.get("n_aves","0") or 0)),
+                 int(float(r.get("ciclo_postura_meses","13") or 13)),
+                 r.get("metodo_amortizacao","LINEAR").strip())
+            )
+
+    if _tabela_vazia("extrato_correcoes"):
+        fp_cor = os.path.join(cfg_dir, "correcoes_classificacao.csv")
+        if os.path.exists(fp_cor):
+            try:
+                import pandas as _pd
+                df_cor = _pd.read_csv(fp_cor, sep=";", dtype=str)
+                for _, r in df_cor.iterrows():
+                    tid = str(r.get("tid","")).strip()
+                    nat = str(r.get("natureza","")).strip()
+                    if tid and tid.lower() != "nan" and nat and nat.lower() != "nan":
+                        PG.execute(
+                            "INSERT INTO extrato_correcoes(tid,natureza,banco,data_tx,valor,descricao) "
+                            "VALUES(%s,%s,%s,%s,%s,%s) ON CONFLICT(tid) DO NOTHING",
+                            (tid, nat, str(r.get("banco","")), str(r.get("data","")),
+                             str(r.get("valor","")), str(r.get("desc","")))
+                        )
+            except Exception:
+                pass
+
     if _tabela_vazia("config_geral"):
         yaml_path = os.path.join(cfg_dir, "config_geral.yaml")
         if os.path.exists(yaml_path):

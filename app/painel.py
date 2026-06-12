@@ -19,6 +19,12 @@ try:
 except ImportError:
     _OFX_DISPONIVEL = False
 
+try:
+    import imob_upload as _IMOB
+    _IMOB_DISPONIVEL = True
+except ImportError:
+    _IMOB_DISPONIVEL = False
+
 # --- PostgreSQL auxiliar (parametrizações, extratos, usuários) ---
 try:
     import db_pg as _PG
@@ -317,7 +323,7 @@ try:
 except Exception as _e:
     st.sidebar.caption(f"(PDF indisponível: {_e})")
 
-_abas = ["📊 DRE", "🔧 Reapropriar/Verificar", "💰 Receita", "📦 Estoque", "🏦 Fluxo de Caixa", "🧾 Extrato/Reconciliação", "🏛️ Balanço", "📈 Indicadores", "⚙️ Config", "📤 Upload OFX"]
+_abas = ["📊 DRE", "🔧 Reapropriar/Verificar", "💰 Receita", "📦 Estoque", "🏦 Fluxo de Caixa", "🧾 Extrato/Reconciliação", "🏛️ Balanço", "📈 Indicadores", "⚙️ Config", "📤 Importar Dados"]
 if _auth.is_admin():
     _abas.append("👥 Usuários")
 tabs = st.tabs(_abas)
@@ -1044,12 +1050,19 @@ with tabs[8]:  # noqa: E305
         st.metric("Receita (linhas)", len(_rec) if _rec is not None else 0)
     st.caption(f"Pasta de dados: `{pasta}`")
 
-# ---------------- Upload OFX ----------------
+# ---------------- Importar Dados ----------------
 with tabs[9]:
-    if _OFX_DISPONIVEL:
-        _OFX.render()
-    else:
-        st.warning("Módulo ofx_upload não disponível.")
+    _sub_imp = st.tabs(["🏦 Extratos OFX", "🏗️ Imobilizado"])
+    with _sub_imp[0]:
+        if _OFX_DISPONIVEL:
+            _OFX.render()
+        else:
+            st.warning("Módulo ofx_upload não disponível.")
+    with _sub_imp[1]:
+        if _IMOB_DISPONIVEL:
+            _IMOB.render()
+        else:
+            st.warning("Módulo imob_upload não disponível.")
 
 # ---------------- Usuários (só admin) ----------------
 if _auth.is_admin() and len(tabs) > 10:

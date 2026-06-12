@@ -135,6 +135,62 @@ def init_schema():
         valor      TEXT NOT NULL DEFAULT '',
         updated_at TIMESTAMPTZ DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS config_composicao (
+        id              SERIAL PRIMARY KEY,
+        produto_norm    TEXT NOT NULL UNIQUE,
+        produto_original TEXT NOT NULL DEFAULT '',
+        ovos_por_caixa  NUMERIC(10,2) NOT NULL DEFAULT 0,
+        emb_por_caixa   NUMERIC(10,4) NOT NULL DEFAULT 0,
+        total_por_caixa NUMERIC(10,4) NOT NULL DEFAULT 0,
+        unidade         TEXT NOT NULL DEFAULT '',
+        ativo           BOOLEAN NOT NULL DEFAULT TRUE,
+        updated_at      TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS config_lotes (
+        id                  SERIAL PRIMARY KEY,
+        lote_id             TEXT NOT NULL UNIQUE,
+        fonte_recria        TEXT NOT NULL DEFAULT '',
+        data_entrada_recria TEXT NOT NULL DEFAULT '',
+        data_inicio_postura TEXT NOT NULL DEFAULT '',
+        galpao_postura      TEXT NOT NULL DEFAULT '',
+        grupo_galpao        TEXT NOT NULL DEFAULT '',
+        n_aves              INT  NOT NULL DEFAULT 0,
+        ciclo_postura_meses INT  NOT NULL DEFAULT 13,
+        metodo_amortizacao  TEXT NOT NULL DEFAULT 'LINEAR',
+        ativo               BOOLEAN NOT NULL DEFAULT TRUE,
+        updated_at          TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS imobilizado (
+        id              SERIAL PRIMARY KEY,
+        item            TEXT NOT NULL,
+        classe          TEXT NOT NULL DEFAULT '',
+        bloco           TEXT NOT NULL DEFAULT '',
+        data_aquisicao  DATE,
+        valor_aquisicao NUMERIC(15,2) NOT NULL DEFAULT 0,
+        valor_pago      NUMERIC(15,2) NOT NULL DEFAULT 0,
+        saldo_a_pagar   NUMERIC(15,2) NOT NULL DEFAULT 0,
+        deprec_mensal   NUMERIC(15,2) NOT NULL DEFAULT 0,
+        valor_liquido   NUMERIC(15,2) NOT NULL DEFAULT 0,
+        status          TEXT NOT NULL DEFAULT '',
+        em_uso          BOOLEAN NOT NULL DEFAULT TRUE,
+        is_bio          BOOLEAN NOT NULL DEFAULT FALSE,
+        ativo           BOOLEAN NOT NULL DEFAULT TRUE,
+        updated_at      TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS extrato_correcoes (
+        id         SERIAL PRIMARY KEY,
+        tid        TEXT NOT NULL UNIQUE,
+        natureza   TEXT NOT NULL,
+        banco      TEXT NOT NULL DEFAULT '',
+        data_tx    TEXT NOT NULL DEFAULT '',
+        valor      TEXT NOT NULL DEFAULT '',
+        descricao  TEXT NOT NULL DEFAULT '',
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
     """
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -198,6 +254,42 @@ def upsert_usuario(login: str, nome: str, salt: str, hash_: str):
 
 
 # ─── Helper bulk para extratos OFX ────────────────────────────────────────────
+
+def fetch_composicao() -> list:
+    return fetchall("SELECT produto_norm, produto_original, ovos_por_caixa, emb_por_caixa, total_por_caixa, unidade FROM config_composicao WHERE ativo = TRUE ORDER BY produto_norm")
+
+def fetch_lotes() -> list:
+    return fetchall("SELECT lote_id, fonte_recria, data_entrada_recria, data_inicio_postura, galpao_postura, grupo_galpao, n_aves, ciclo_postura_meses, metodo_amortizacao FROM config_lotes WHERE ativo = TRUE ORDER BY lote_id")
+
+def fetch_imobilizado() -> list:
+    return fetchall("SELECT item, classe, bloco, data_aquisicao, valor_aquisicao, valor_pago, saldo_a_pagar, deprec_mensal, valor_liquido, status, em_uso, is_bio FROM imobilizado WHERE ativo = TRUE ORDER BY id")
+
+def replace_imobilizado(rows: list):
+    """Substitui todo o imobilizado (desativa antigos e insere novos)."""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE imobilizado SET ativo = FALSE")
+            for r in rows:
+                cur.execute("""
+                    INSERT INTO imobilizado(item,classe,bloco,data_aquisicao,valor_aquisicao,valor_pago,saldo_a_pagar,deprec_mensal,valor_liquido,status,em_uso,is_bio)
+                    VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                """, (r["item"], r["classe"], r.get("bloco",""), r.get("acq"),
+                      r["valor_aquisicao"], r["valor_pago"], r["saldo_a_pagar"],
+                      r["deprec_mensal"], r["valor_liquido"], r["status"],
+                      bool(r["em_uso"]), bool(r["is_bio"])))
+
+def fetch_correcoes() -> dict:
+    rows = fetchall("SELECT tid, natureza FROM extrato_correcoes")
+    return {r["tid"]: r["natureza"] for r in rows}
+
+def upsert_correcao(tid: str, natureza: str, banco: str = "", data_tx: str = "", valor: str = "", descricao: str = ""):
+    execute("""
+        INSERT INTO extrato_correcoes(tid, natureza, banco, data_tx, valor, descricao)
+        VALUES(%s,%s,%s,%s,%s,%s)
+        ON CONFLICT(tid) DO UPDATE SET natureza=%s, banco=%s, data_tx=%s, valor=%s, descricao=%s, updated_at=NOW()
+    """, (tid, natureza, banco, data_tx, valor, descricao,
+          natureza, banco, data_tx, valor, descricao))
+
 
 def insert_extrato_batch(txs: list) -> tuple:
     """Insere transações, ignora duplicatas. Retorna (inseridas, ignoradas)."""
