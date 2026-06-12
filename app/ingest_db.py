@@ -116,7 +116,7 @@ def ingest_despesa_db(cfg, conn=None) -> pd.DataFrame:
         FROM VS_CONTASAPAGAR p
         WHERE p.DATACOMPETENCIA IS NOT NULL
           AND p.VALOR_FINAL > 0
-          AND p.SITUACAO <> 3
+          AND p.SITUACAO NOT IN (3, 8)
         ORDER BY p.DATACOMPETENCIA
     """
     close = conn is None
