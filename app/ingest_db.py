@@ -211,14 +211,16 @@ def ingest_receita_db(cfg, conn=None) -> pd.DataFrame:
 
     sql = f"""
         SELECT
-            v.CONT_NOTA         AS CONT_NOTA,
-            v.DATAEMISSAO       AS DATA_EMISSAO,
-            v.CLIENTE           AS CLIENTE,
-            i.DESCRICAO         AS PRODUTO,
-            i.SUBTOTAL          AS VALOR
+            v.CONT_NOTA                         AS CONT_NOTA,
+            v.DATAEMISSAO                       AS DATA_EMISSAO,
+            v.CLIENTE                           AS CLIENTE,
+            i.DESCRICAO                         AS PRODUTO,
+            i.SUBTOTAL                          AS VALOR,
+            TRIM(COALESCE(c.NOME, ''))          AS CC_NOME
         FROM VS_VENDAS v
-        JOIN VS_ITENS_VENDA i   ON i.CONT_NOTA = v.CONT_NOTA
-        JOIN {_FATNOTAF} f      ON f.CONT_NOTA = v.CONT_NOTA
+        JOIN VS_ITENS_VENDA i   ON i.CONT_NOTA  = v.CONT_NOTA
+        JOIN {_FATNOTAF} f      ON f.CONT_NOTA  = v.CONT_NOTA
+        LEFT JOIN CONCECUS01 c  ON c.CODCENTRO  = f.CENTROCUSTO
         WHERE v.DATAEMISSAO IS NOT NULL
           AND i.SUBTOTAL > 0
           AND f.SITUACAO = '{_SITUACAO_VALIDA}'
@@ -252,16 +254,17 @@ def ingest_receita_db(cfg, conn=None) -> pd.DataFrame:
         grupo = info["grupo"]    if info else ""
         uni   = info["unidade"]  if info else ""
         cor   = info["cor"]      if info else ""
+        cc    = _str(r.get("CC_NOME", "")) or "(sem CC)"
 
-        if not info:         destino = "NAOCLASS"
-        elif lid == "IGNORAR":      destino = "IGNORADO"
+        if not info:              destino = "NAOCLASS"
+        elif lid == "IGNORAR":    destino = "IGNORADO"
         elif lid == "DESCARTE_AVES": destino = "DESCARTE"
-        else:                destino = "RECEITA"
+        else:                     destino = "RECEITA"
 
         rows.append(dict(
             periodo=B.period(d), ano=d.year, mes=d.month, data=d,
             produto=prod, linha_id=lid, grupo=grupo, unidade=uni, cor=cor,
-            valor=val, destino=destino, cliente=cli,
+            valor=val, destino=destino, cliente=cli, cc=cc,
         ))
     return pd.DataFrame(rows)
 

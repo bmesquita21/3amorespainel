@@ -120,6 +120,22 @@ def _calc_indicadores(_dfs, per_tuple, _cfg_obj, biologico, caixa_real, adiant_c
 def money_col(df, col="valor"):
     df = df.copy(); df[col] = df[col].map(B.brl); return df
 
+# Paleta de destaque para linhas da DRE
+_DRE_STYLE = {
+    "section":  "background-color:#FEF3E2;font-weight:700;color:#7B4F2E",
+    "total":    "background-color:#FFF0E0;font-weight:700;border-top:2px solid #ef7736",
+    "subtotal": "background-color:#EEF2F7;font-weight:700",
+    "profit":   "background-color:#E8EFF7;font-weight:700",
+}
+
+def _dre_styler(df, tipo_map):
+    """Aplica cores de linha ao dataframe DRE baseado no tipo (section/total/subtotal/profit)."""
+    def _row(row):
+        t = tipo_map[row.name] if row.name < len(tipo_map) else "det"
+        css = _DRE_STYLE.get(t, "")
+        return [css] * len(row)
+    return df.style.apply(_row, axis=1)
+
 def tabela_drill(df, grupo, valor="valor", *, key, det_cols=None, col_label=None, fmt=B.brl, topn=None, height_det=300):
     """RASTREÁVEL: tabela <grupo → Total, nº> CLICÁVEL. Clicar numa linha abre, embaixo, os
     lançamentos individuais que somam aquele valor (rastreabilidade). grupo: str ou lista."""
@@ -316,19 +332,56 @@ tabs = st.tabs(_abas)
 with tabs[0]:
     st.subheader(f"DRE Gerencial (competência) — {sel}")
 
-    # Usa filtro global de Bloco/CC do cabeçalho
-    if _filtrou_g:
-        _dfs_fil = dict(dfs); _dfs_fil["despesa"] = _desp_fil_g
-        V = D.compute(_dfs_fil, per, cfg_obj, biologico)
-        st.caption(f"🔍 Filtro ativo: {len(_sel_blocos_g)} bloco(s) · {len(_sel_ccs_g)} CC(s) — altere no cabeçalho acima.")
+    # ── Filtros específicos da aba DRE ─────────────────────────────────────
+    _fdre1, _fdre2 = st.columns([3, 3])
+
+    with _fdre1:
+        _default_meses = per[-6:] if len(per) > 6 else per
+        _meses_dre = st.multiselect(
+            "🗓️ Meses exibidos (máx. 6)",
+            options=per, default=_default_meses, format_func=_mes_lbl,
+            key="dre_meses",
+            help="Selecione até 6 meses para exibir como colunas. O período global controla quais meses estão disponíveis.",
+        )
+        if len(_meses_dre) > 6:
+            _meses_dre = _meses_dre[-6:]
+            st.caption("⚠️ Máximo de 6 meses — últimos 6 mantidos.")
+        per_dre = sorted(_meses_dre) if _meses_dre else per
+
+    with _fdre2:
+        _rec_ccs = sorted({c for c in (rec[rec.periodo.isin(P)]["cc"].dropna() if "cc" in rec.columns and len(rec) else []) if c})
+        _desp_ccs = sorted({c for c in (desp["cc"].dropna() if len(desp) else []) if c and c != "(sem CC)"})
+        _all_ccs_dre = sorted(set(_rec_ccs) | set(_desp_ccs))
+        _sel_cc_dre = st.multiselect(
+            "🏷️ Centro de Custo (DRE)",
+            options=["(sem CC)"] + _all_ccs_dre, default=[],
+            placeholder="Todos os CCs",
+            key="dre_cc",
+            help="Filtra faturamento E despesas pelo centro de custo selecionado.",
+        )
+
+    # Monta dfs filtrados para o cálculo do DRE
+    _dfs_dre = dict(dfs)
+    if _sel_cc_dre:
+        _cc_set = set(_sel_cc_dre)
+        if "cc" in rec.columns and len(rec):
+            _dfs_dre["receita"] = rec[rec["cc"].isin(_cc_set)]
+        if len(desp):
+            _dfs_dre["despesa"] = desp[desp["cc"].isin(_cc_set)]
+        st.caption(f"🔍 CC ativo: {', '.join(_sel_cc_dre)}")
+    elif _filtrou_g:
+        _dfs_dre["despesa"] = _desp_fil_g
+        st.caption(f"🔍 Filtro global ativo: {len(_sel_blocos_g)} bloco(s) · {len(_sel_ccs_g)} CC(s) — altere no cabeçalho acima.")
+
+    V_dre = D.compute(_dfs_dre, per, cfg_obj, biologico)
 
     k = st.columns(4)
-    k[0].metric("Faturamento bruto", B.brl_compact(V["FAT_BRUTO"]), help=B.brl(V["FAT_BRUTO"]))
-    k[1].metric("Lucro bruto", B.brl_compact(V["LUCRO_BRUTO"]), help=B.brl(V["LUCRO_BRUTO"]))
-    k[2].metric("EBITDA", B.brl_compact(V["EBITDA"]), help=B.brl(V["EBITDA"]))
-    k[3].metric("Lucro líquido", B.brl_compact(V["LUCRO_LIQ"]), help=B.brl(V["LUCRO_LIQ"]))
+    k[0].metric("Faturamento bruto", B.brl_compact(V_dre["FAT_BRUTO"]), help=B.brl(V_dre["FAT_BRUTO"]))
+    k[1].metric("Lucro bruto",       B.brl_compact(V_dre["LUCRO_BRUTO"]), help=B.brl(V_dre["LUCRO_BRUTO"]))
+    k[2].metric("EBITDA",            B.brl_compact(V_dre["EBITDA"]),      help=B.brl(V_dre["EBITDA"]))
+    k[3].metric("Lucro líquido",     B.brl_compact(V_dre["LUCRO_LIQ"]),   help=B.brl(V_dre["LUCRO_LIQ"]))
 
-    fat = V["FAT_BRUTO"] or 1
+    fat = V_dre["FAT_BRUTO"] or 1
 
     # _dre_det e _idk_map disponíveis em ambas as vistas (matriz e coluna única)
     _idk_map = [idk or "" for _, _, idk in D.LAYOUT]
@@ -384,19 +437,19 @@ with tabs[0]:
                     f'Sem lançamentos individuais para <b>{_label_mae}</b> (linha calculada ou sem dados).</div>',
                     unsafe_allow_html=True)
 
-    if len(per) > 1:
+    if len(per_dre) > 1:
         # ── Vista matricial: uma coluna por mês + Total + Média + drill-down ─
-        if _filtrou_g:
-            _dfs_fil2 = dict(dfs); _dfs_fil2["despesa"] = _desp_fil_g
-            _vper = {p: D.compute(_dfs_fil2, [p], cfg_obj, biologico) for p in per}
+        _use_cache_m = (not _sel_cc_dre and not _filtrou_g and per_dre == per)
+        if _use_cache_m:
+            _vper = _calc_dre_mensal(dfs, tuple(per_dre), cfg_obj, biologico)
         else:
-            _vper = _calc_dre_mensal(dfs, _per_tuple, cfg_obj, biologico)
+            _vper = {p: D.compute(_dfs_dre, [p], cfg_obj, biologico) for p in per_dre}
         _rows_m = []
         for tipo, label, idk in D.LAYOUT:
             ind = "    " if tipo in ("sub", "det") else ""
             row = {"Descrição": ind + label}
             vals_n = []
-            for p in per:
+            for p in per_dre:
                 v = _vper[p].get(idk) if idk else None
                 row[_mes_lbl(p)] = B.brl(v) if v is not None else ""
                 if v is not None: vals_n.append(v)
@@ -411,8 +464,11 @@ with tabs[0]:
             _rows_m.append(row)
         df_dre = pd.DataFrame(_rows_m)
         _h_dre = min(44 + 35 * len(_rows_m), 950)
-        _dre_sel_m = st.dataframe(df_dre, hide_index=True, use_container_width=True, height=_h_dre,
-                                  on_select="rerun", selection_mode="single-row", key="dre_table_m")
+        _dre_sel_m = st.dataframe(
+            _dre_styler(df_dre, _tipo_map),
+            hide_index=True, use_container_width=True, height=_h_dre,
+            on_select="rerun", selection_mode="single-row", key="dre_table_m",
+        )
         st.caption("👆 Clique em qualquer linha para ver **todos os lançamentos do período** que somam aquela linha. Clique novamente para fechar.")
 
         if "dre_open_m" not in st.session_state:
@@ -433,7 +489,7 @@ with tabs[0]:
         linhas = []
         for tipo, label, idk in D.LAYOUT:
             ind = "    " if tipo in ("sub", "det") else ""
-            val = V.get(idk) if idk else None
+            val = V_dre.get(idk) if idk else None
             linhas.append({
                 "Linha": ind + label,
                 "Valor (R$)": B.brl(val) if val is not None else "",
@@ -442,8 +498,11 @@ with tabs[0]:
             })
         df_dre = pd.DataFrame([{k: v for k, v in r.items() if k != "Descrição"} for r in linhas])
 
-        _dre_sel = st.dataframe(df_dre, hide_index=True, use_container_width=True, height=880,
-                                on_select="rerun", selection_mode="single-row", key="dre_table")
+        _dre_sel = st.dataframe(
+            _dre_styler(df_dre, _tipo_map),
+            hide_index=True, use_container_width=True, height=880,
+            on_select="rerun", selection_mode="single-row", key="dre_table",
+        )
         st.caption("👆 Clique em qualquer linha para ver os lançamentos. Clique novamente para fechar.")
 
         if "dre_open" not in st.session_state:
