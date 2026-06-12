@@ -507,7 +507,7 @@ with tabs[0]:
 
     if len(per) > 1:
         # ── Vista matricial: uma coluna por mês + Total + Média + drill-down ─
-        _use_cache_m = not _sel_cc_dre and not _filtrou_g
+        _use_cache_m = not _filtrou_g
         if _use_cache_m:
             _vper = _calc_dre_mensal(dfs, _per_tuple, cfg_obj, biologico)
         else:
