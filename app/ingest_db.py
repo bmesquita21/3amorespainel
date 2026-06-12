@@ -26,6 +26,17 @@ from db import get_conn
 
 _QUITADO = {2}
 
+# Tabela de cabeçalho de NF (empresa 01, centro contábil 001)
+_FATNOTAF = "FATNOTAF01001"
+
+# Situações válidas para receita (NF impressa/autorizada)
+_SITUACAO_VALIDA = "IMPRESSA"
+
+# Naturezas de operação que correspondem a operações econômicas (vendas reais).
+# Execute tools/probe_fatnotaf.py no VPS para confirmar os valores e ajuste aqui.
+# Deixe None para não filtrar por natureza enquanto os valores não forem confirmados.
+_NATUREZAS_ECONOMICAS: list | None = None
+
 
 # ─── Utilitários ─────────────────────────────────────────────────────────────
 
@@ -191,8 +202,19 @@ def ingest_despesa_db(cfg, conn=None) -> pd.DataFrame:
 # ─── Receitas ────────────────────────────────────────────────────────────────
 
 def ingest_receita_db(cfg, conn=None) -> pd.DataFrame:
-    """Receitas por DATA DE EMISSÃO da NF — equivalente a ingest_receita()."""
-    sql = """
+    """Receitas por DATA DE EMISSÃO da NF — equivalente a ingest_receita().
+
+    Filtra via FATNOTAF01001:
+      - SITUACAO = 'IMPRESSA'  → exclui canceladas, em digitação, devolvidas, etc.
+      - NATUREZA (opcional)    → quando _NATUREZAS_ECONOMICAS for definido, inclui
+                                  apenas operações econômicas (vendas reais).
+    """
+    nat_filter = ""
+    if _NATUREZAS_ECONOMICAS:
+        placeholders = ", ".join(f"'{n}'" for n in _NATUREZAS_ECONOMICAS)
+        nat_filter = f"AND TRIM(f.NATUREZA) IN ({placeholders})"
+
+    sql = f"""
         SELECT
             v.CONT_NOTA         AS CONT_NOTA,
             v.DATAEMISSAO       AS DATA_EMISSAO,
@@ -200,9 +222,12 @@ def ingest_receita_db(cfg, conn=None) -> pd.DataFrame:
             i.DESCRICAO         AS PRODUTO,
             i.SUBTOTAL          AS VALOR
         FROM VS_VENDAS v
-        JOIN VS_ITENS_VENDA i ON i.CONT_NOTA = v.CONT_NOTA
+        JOIN VS_ITENS_VENDA i   ON i.CONT_NOTA = v.CONT_NOTA
+        JOIN {_FATNOTAF} f      ON f.CONT_NOTA = v.CONT_NOTA
         WHERE v.DATAEMISSAO IS NOT NULL
           AND i.SUBTOTAL > 0
+          AND TRIM(f.SITUACAO) = '{_SITUACAO_VALIDA}'
+          {nat_filter}
         ORDER BY v.DATAEMISSAO
     """
     close = conn is None
