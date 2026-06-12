@@ -62,11 +62,13 @@ def get_conn():
     """Retorna conexão DBAPI2 com o Firebird.
     Use como context manager ou chame .close() ao terminar.
     """
-    from firebird.driver import connect, driver_config
+    from firebird.driver import connect, create_client
 
     client_lib = _resolve_client_lib()
+    kwargs = {}
     if client_lib:
-        driver_config.fb_client_library.value = client_lib
+        kwargs["fb_library_filename"] = client_lib
+    client = create_client(**kwargs)
 
     host = os.environ.get("FB_HOST", "192.168.100.201")
     port = os.environ.get("FB_PORT", "3050")
@@ -79,6 +81,7 @@ def get_conn():
         user=user,
         password=pwd,
         charset=os.environ.get("FB_CHARSET", "WIN1252"),
+        client=client,
     )
 
 def db_disponivel() -> bool:
