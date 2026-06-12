@@ -43,6 +43,23 @@ except ImportError:
 
 st.set_page_config(page_title="Painel Financeiro 3 Amores", page_icon="🥚", layout="wide")
 _brand.aplicar()
+# CSS: sidebar hamburger e tema geral
+st.markdown("""<style>
+[data-testid="stSidebarCollapseButton"] button,
+button[data-testid="collapsedControl"] {
+    background:#ef7736!important;border-radius:10px!important;
+    width:40px!important;height:40px!important;border:none!important;
+    box-shadow:0 2px 8px rgba(239,119,54,.4)!important;
+    display:flex!important;align-items:center!important;justify-content:center!important;
+}
+[data-testid="stSidebarCollapseButton"] button:hover,
+button[data-testid="collapsedControl"]:hover{background:#d4602a!important;}
+[data-testid="stSidebarCollapseButton"] button svg,
+button[data-testid="collapsedControl"] svg{display:none!important;}
+[data-testid="stSidebarCollapseButton"] button::after,
+button[data-testid="collapsedControl"]::after{content:'☰';font-size:18px;color:white;font-weight:700;}
+section[data-testid="stSidebar"]{transition:all .25s ease;}
+</style>""", unsafe_allow_html=True)
 # Marca a página como pt-BR e "não traduzir": senão a tradução automática do navegador
 # troca "mil" por "milhões" nos KPIs (é bug do TRADUTOR, não do cálculo). Best-effort.
 try:
@@ -128,13 +145,23 @@ _DRE_STYLE = {
     "profit":   "background-color:#E8EFF7;font-weight:700",
 }
 
-def _dre_styler(df, tipo_map):
-    """Aplica cores de linha ao dataframe DRE baseado no tipo (section/total/subtotal/profit)."""
+def _dre_styler(df, tipo_map, highlight_cols=None):
+    """Aplica cores de linha ao dataframe DRE baseado no tipo (section/total/subtotal/profit).
+    highlight_cols: lista de nomes de colunas que recebem destaque adicional (ex: TOTAL, Média/mês)."""
     def _row(row):
         t = tipo_map[row.name] if row.name < len(tipo_map) else "det"
         css = _DRE_STYLE.get(t, "")
         return [css] * len(row)
-    return df.style.apply(_row, axis=1)
+    s = df.style.apply(_row, axis=1)
+    if highlight_cols:
+        for _hc in highlight_cols:
+            if _hc in df.columns:
+                s = s.set_properties(
+                    subset=[_hc],
+                    **{"background-color": "#FEF3E2", "font-weight": "bold",
+                       "border-left": "2px solid #ef7736"}
+                )
+    return s
 
 def tabela_drill(df, grupo, valor="valor", *, key, det_cols=None, col_label=None, fmt=B.brl, topn=None, height_det=300):
     """RASTREÁVEL: tabela <grupo → Total, nº> CLICÁVEL. Clicar numa linha abre, embaixo, os
@@ -211,23 +238,11 @@ def _get_bloco(row):
     if g == "PARTICULAR":   return "Particular"
     return g.title() if g else "Outros"
 
-# -------- Cabeçalho compacto: Logo | Período | Bloco | CC | Meses --------
-_hl, _hp, _hs, _hb, _hc, _hm = st.columns([1, 2, 1.6, 1.8, 1.8, 0.7])
-
-with _hl:
-    st.markdown("""
-    <div style="display:flex;align-items:center;gap:8px;padding:4px 0;">
-      <div style="background:#ef7736;border-radius:50%;width:38px;height:38px;
-                  display:flex;align-items:center;justify-content:center;
-                  font-size:1.4rem;box-shadow:0 2px 6px rgba(239,119,54,.35);flex-shrink:0;">🥚</div>
-      <div>
-        <div style="font-size:.78rem;font-weight:800;color:#5c3d1e;letter-spacing:.5px;line-height:1.1;">TRES AMORES AGRONEGÓCIO</div>
-        <div style="font-size:.58rem;color:#a07850;letter-spacing:1.5px;text-transform:uppercase;line-height:1.1;">Painel Financeiro</div>
-      </div>
-    </div>""", unsafe_allow_html=True)
+# -------- Cabeçalho compacto: Período | Seletor | Bloco | CC --------
+_hp, _hs, _hb, _hc = st.columns([1.8, 3.0, 2.2, 2.2])
 
 with _hp:
-    modo = st.radio("📅 Período", ["Acumulado", "Ano", "Mês", "Intervalo"],
+    modo = st.radio("📅 Período", ["Acumulado", "Ano", "Mês", "Meses", "Intervalo"],
                     horizontal=True, key="modo_per", label_visibility="collapsed")
 
 with _hs:
@@ -237,6 +252,16 @@ with _hs:
     elif modo == "Mês":
         m = st.selectbox("Mês", periodos, index=len(periodos) - 1, key="mes_per", label_visibility="collapsed")
         per = [m]; sel = m
+    elif modo == "Meses":
+        _ms = st.multiselect(
+            "Meses", periodos,
+            default=periodos[-min(3, len(periodos)):],
+            format_func=_mes_lbl, key="meses_per",
+            label_visibility="collapsed",
+            placeholder="Selecione meses (não sequenciais)...",
+        )
+        per = sorted(_ms) if _ms else periodos
+        sel = "Meses: " + ", ".join(_mes_lbl(p) for p in per) if per != periodos else "Todos os meses"
     elif modo == "Intervalo":
         _si1, _si2 = st.columns(2)
         with _si1: ini = st.selectbox("De", periodos, index=0, key="ini_per", label_visibility="collapsed")
@@ -272,9 +297,6 @@ _sel_ccs_g = _sel_ccs_g or _ccs_all_g
 # Aplica filtro global de despesas
 _desp_fil_g = _desp_g_b[_desp_g_b["cc"].isin(_sel_ccs_g)] if len(_desp_g_b) else _desp_g_b
 _filtrou_g  = len(_desp_fil_g) < len(_desp_g)
-
-with _hm:
-    st.metric("Meses", len(per))
 
 # Linha divisória fina
 st.markdown("<hr style='margin:4px 0 2px 0;border:none;border-top:2px solid #ef7736;opacity:.35;'>",
@@ -332,33 +354,17 @@ tabs = st.tabs(_abas)
 with tabs[0]:
     st.subheader(f"DRE Gerencial (competência) — {sel}")
 
-    # ── Filtros específicos da aba DRE ─────────────────────────────────────
-    _fdre1, _fdre2 = st.columns([3, 3])
-
-    with _fdre1:
-        _default_meses = per[-6:] if len(per) > 6 else per
-        _meses_dre = st.multiselect(
-            "🗓️ Meses exibidos (máx. 6)",
-            options=per, default=_default_meses, format_func=_mes_lbl,
-            key="dre_meses",
-            help="Selecione até 6 meses para exibir como colunas. O período global controla quais meses estão disponíveis.",
-        )
-        if len(_meses_dre) > 6:
-            _meses_dre = _meses_dre[-6:]
-            st.caption("⚠️ Máximo de 6 meses — últimos 6 mantidos.")
-        per_dre = sorted(_meses_dre) if _meses_dre else per
-
-    with _fdre2:
-        _rec_ccs = sorted({c for c in (rec[rec.periodo.isin(P)]["cc"].dropna() if "cc" in rec.columns and len(rec) else []) if c})
-        _desp_ccs = sorted({c for c in (desp["cc"].dropna() if len(desp) else []) if c and c != "(sem CC)"})
-        _all_ccs_dre = sorted(set(_rec_ccs) | set(_desp_ccs))
-        _sel_cc_dre = st.multiselect(
-            "🏷️ Centro de Custo (DRE)",
-            options=["(sem CC)"] + _all_ccs_dre, default=[],
-            placeholder="Todos os CCs",
-            key="dre_cc",
-            help="Filtra faturamento E despesas pelo centro de custo selecionado.",
-        )
+    # ── Filtro de Centro de Custo (afeta faturamento + despesas) ──────────
+    _rec_ccs = sorted({c for c in (rec[rec.periodo.isin(P)]["cc"].dropna() if "cc" in rec.columns and len(rec) else []) if c})
+    _desp_ccs = sorted({c for c in (desp["cc"].dropna() if len(desp) else []) if c and c != "(sem CC)"})
+    _all_ccs_dre = sorted(set(_rec_ccs) | set(_desp_ccs))
+    _sel_cc_dre = st.multiselect(
+        "🏷️ Centro de Custo — filtra faturamento e despesas",
+        options=["(sem CC)"] + _all_ccs_dre, default=[],
+        placeholder="Todos os CCs (sem filtro)",
+        key="dre_cc",
+        help="Selecione CCs para ver somente o faturamento (NFs) e as despesas daquele centro. '(sem CC)' inclui lançamentos sem centro de custo.",
+    )
 
     # Monta dfs filtrados para o cálculo do DRE
     _dfs_dre = dict(dfs)
@@ -375,11 +381,27 @@ with tabs[0]:
 
     V_dre = D.compute(_dfs_dre, per, cfg_obj, biologico)
 
-    k = st.columns(4)
-    k[0].metric("Faturamento bruto", B.brl_compact(V_dre["FAT_BRUTO"]), help=B.brl(V_dre["FAT_BRUTO"]))
-    k[1].metric("Lucro bruto",       B.brl_compact(V_dre["LUCRO_BRUTO"]), help=B.brl(V_dre["LUCRO_BRUTO"]))
-    k[2].metric("EBITDA",            B.brl_compact(V_dre["EBITDA"]),      help=B.brl(V_dre["EBITDA"]))
-    k[3].metric("Lucro líquido",     B.brl_compact(V_dre["LUCRO_LIQ"]),   help=B.brl(V_dre["LUCRO_LIQ"]))
+    def _kpi_card(titulo, valor, valor_fmt, cor_pos="#1a7f3c", icone=""):
+        cor = cor_pos if valor >= 0 else "#c0392b"
+        sinal = "▲" if valor > 0 else ("▼" if valor < 0 else "—")
+        borda = "#ef7736" if titulo == "Faturamento Bruto" else cor
+        return f"""<div style="background:linear-gradient(135deg,#fffcf9 0%,#fff 100%);
+            border:1.5px solid {borda};border-radius:14px;padding:16px 20px;
+            box-shadow:0 2px 10px rgba(0,0,0,.07);height:100%;">
+          <div style="font-size:.7rem;font-weight:700;color:#a07850;letter-spacing:.8px;
+               text-transform:uppercase;margin-bottom:6px;">{icone} {titulo}</div>
+          <div style="font-size:1.6rem;font-weight:800;color:#2d1a0e;line-height:1.1;">
+            {B.brl_compact(valor)}</div>
+          <div style="font-size:.75rem;color:{cor};font-weight:600;margin-top:4px;">
+            {sinal} {B.brl(abs(valor))}</div>
+        </div>"""
+
+    _kc = st.columns(4)
+    _kc[0].markdown(_kpi_card("Faturamento Bruto", V_dre["FAT_BRUTO"], B.brl(V_dre["FAT_BRUTO"]), icone="💰"), unsafe_allow_html=True)
+    _kc[1].markdown(_kpi_card("Lucro Bruto",       V_dre["LUCRO_BRUTO"], B.brl(V_dre["LUCRO_BRUTO"]), icone="📦"), unsafe_allow_html=True)
+    _kc[2].markdown(_kpi_card("EBITDA",            V_dre["EBITDA"],      B.brl(V_dre["EBITDA"]),      icone="📊"), unsafe_allow_html=True)
+    _kc[3].markdown(_kpi_card("Lucro Líquido",     V_dre["LUCRO_LIQ"],   B.brl(V_dre["LUCRO_LIQ"]),  icone="🏆"), unsafe_allow_html=True)
+    st.markdown("<div style='margin-bottom:8px;'></div>", unsafe_allow_html=True)
 
     fat = V_dre["FAT_BRUTO"] or 1
 
@@ -437,19 +459,21 @@ with tabs[0]:
                     f'Sem lançamentos individuais para <b>{_label_mae}</b> (linha calculada ou sem dados).</div>',
                     unsafe_allow_html=True)
 
-    if len(per_dre) > 1:
+    _HCOLS = ["TOTAL", "Média/mês", "Melhor mês", "Pior mês"]
+
+    if len(per) > 1:
         # ── Vista matricial: uma coluna por mês + Total + Média + drill-down ─
-        _use_cache_m = (not _sel_cc_dre and not _filtrou_g and per_dre == per)
+        _use_cache_m = not _sel_cc_dre and not _filtrou_g
         if _use_cache_m:
-            _vper = _calc_dre_mensal(dfs, tuple(per_dre), cfg_obj, biologico)
+            _vper = _calc_dre_mensal(dfs, _per_tuple, cfg_obj, biologico)
         else:
-            _vper = {p: D.compute(_dfs_dre, [p], cfg_obj, biologico) for p in per_dre}
+            _vper = {p: D.compute(_dfs_dre, [p], cfg_obj, biologico) for p in per}
         _rows_m = []
         for tipo, label, idk in D.LAYOUT:
             ind = "    " if tipo in ("sub", "det") else ""
             row = {"Descrição": ind + label}
             vals_n = []
-            for p in per_dre:
+            for p in per:
                 v = _vper[p].get(idk) if idk else None
                 row[_mes_lbl(p)] = B.brl(v) if v is not None else ""
                 if v is not None: vals_n.append(v)
@@ -465,7 +489,7 @@ with tabs[0]:
         df_dre = pd.DataFrame(_rows_m)
         _h_dre = min(44 + 35 * len(_rows_m), 950)
         _dre_sel_m = st.dataframe(
-            _dre_styler(df_dre, _tipo_map),
+            _dre_styler(df_dre, _tipo_map, highlight_cols=_HCOLS),
             hide_index=True, use_container_width=True, height=_h_dre,
             on_select="rerun", selection_mode="single-row", key="dre_table_m",
         )
@@ -486,6 +510,7 @@ with tabs[0]:
 
     else:
         # ── Vista detalhada: coluna única + drill-down (período único) ───────
+        _HCOLS = ["Valor (R$)", "% Fat."]
         linhas = []
         for tipo, label, idk in D.LAYOUT:
             ind = "    " if tipo in ("sub", "det") else ""
