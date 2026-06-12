@@ -73,7 +73,7 @@ def login_gate(base):
         <div style='text-align:center;margin-bottom:28px;'>
           <div style='font-size:3.8rem;margin-bottom:8px;'>🥚</div>
           <div style='font-size:1.7rem;font-weight:900;color:#5c3d1e;letter-spacing:2px;
-                      text-transform:uppercase;'>Três Amores</div>
+                      text-transform:uppercase;'>Tres Amores Agronegócio</div>
           <div style='width:48px;height:3px;background:#ef7736;margin:8px auto 6px auto;
                       border-radius:2px;'></div>
           <div style='font-size:0.78rem;color:#a07850;letter-spacing:3px;

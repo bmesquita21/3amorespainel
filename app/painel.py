@@ -147,7 +147,7 @@ def tabela_drill(df, grupo, valor="valor", *, key, det_cols=None, col_label=None
 st.sidebar.markdown("""
 <div style='text-align:center;padding:8px 0 4px 0'>
   <div style='font-size:2rem;'>🥚</div>
-  <div style='font-size:1.05rem;font-weight:800;color:#e5dfcc;letter-spacing:1px;'>TRÊS AMORES</div>
+  <div style='font-size:1.05rem;font-weight:800;color:#e5dfcc;letter-spacing:1px;'>TRES AMORES AGRONEGÓCIO</div>
   <div style='font-size:0.68rem;color:#c4b49a;letter-spacing:2px;text-transform:uppercase;'>Painel Financeiro</div>
 </div>
 """, unsafe_allow_html=True)
@@ -209,7 +209,7 @@ with _hl:
                   display:flex;align-items:center;justify-content:center;
                   font-size:1.4rem;box-shadow:0 2px 6px rgba(239,119,54,.35);flex-shrink:0;">🥚</div>
       <div>
-        <div style="font-size:.78rem;font-weight:800;color:#5c3d1e;letter-spacing:.5px;line-height:1.1;">TRÊS AMORES</div>
+        <div style="font-size:.78rem;font-weight:800;color:#5c3d1e;letter-spacing:.5px;line-height:1.1;">TRES AMORES AGRONEGÓCIO</div>
         <div style="font-size:.58rem;color:#a07850;letter-spacing:1.5px;text-transform:uppercase;line-height:1.1;">Painel Financeiro</div>
       </div>
     </div>""", unsafe_allow_html=True)

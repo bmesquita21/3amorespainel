@@ -178,7 +178,7 @@ LOGO_HTML = f"""
               width:64px; height:64px; line-height:64px; font-size:36px;
               box-shadow:0 4px 12px rgba(239,119,54,0.4);">🥚</div>
   <div style="font-size:1.5rem; font-weight:800; color:{MARROM}; margin-top:6px;
-              letter-spacing:0.5px;">TRÊS AMORES</div>
+              letter-spacing:0.5px;">TRES AMORES AGRONEGÓCIO</div>
   <div style="font-size:0.78rem; color:#888; letter-spacing:2px; text-transform:uppercase;">
     Painel Financeiro</div>
 </div>
