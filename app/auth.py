@@ -35,6 +35,16 @@ def _confere(senha, salt_hex, hash_hex):
 
 
 def _carregar_usuarios(base):
+    # Tenta PG primeiro
+    try:
+        import db_pg as _pg
+        if _pg.is_available():
+            rows = _pg.fetch_usuarios()
+            if rows:
+                return {r["login"]: {"nome": r["nome"], "salt": r["salt"], "hash": r["hash"]} for r in rows}
+    except Exception:
+        pass
+    # Fallback YAML
     if yaml is None:
         return {}
     fp = os.path.join(base, "config", "usuarios.yaml")
@@ -144,6 +154,16 @@ def adicionar_usuario(base, login, nome, senha):
         return "Login deve conter apenas letras, números, ponto ou underline."
     if len(senha) < 6:
         return "Senha deve ter pelo menos 6 caracteres."
+    salt, hsh = hash_senha(senha)
+    # Tenta PG primeiro
+    try:
+        import db_pg as _pg
+        if _pg.is_available():
+            _pg.upsert_usuario(login, nome.strip(), salt, hsh)
+            return None
+    except Exception as e:
+        return f"Erro ao salvar no banco: {e}"
+    # Fallback YAML
     if yaml is None:
         return "pyyaml não disponível."
     fp = os.path.join(base, "config", "usuarios.yaml")
@@ -155,16 +175,22 @@ def adicionar_usuario(base, login, nome, senha):
             data = {}
         if "usuarios" not in data:
             data["usuarios"] = {}
-        salt, hsh = hash_senha(senha)
         data["usuarios"][login] = {"nome": nome.strip(), "salt": salt, "hash": hsh}
         _salvar_yaml(base, data)
-        return None  # sucesso
+        return None
     except Exception as e:
         return f"Erro ao salvar: {e}"
 
 
 def remover_usuario(base, login):
     """Remove usuário pelo login. Retorna mensagem de erro ou None."""
+    try:
+        import db_pg as _pg
+        if _pg.is_available():
+            _pg.execute("UPDATE usuarios SET ativo = FALSE WHERE login = %s", (login,))
+            return None
+    except Exception as e:
+        return f"Erro ao remover no banco: {e}"
     if yaml is None:
         return "pyyaml não disponível."
     fp = os.path.join(base, "config", "usuarios.yaml")
@@ -186,6 +212,14 @@ def alterar_senha(base, login, senha_nova):
     """Altera a senha de um usuário existente. Retorna mensagem de erro ou None."""
     if len(senha_nova) < 6:
         return "Senha deve ter pelo menos 6 caracteres."
+    salt, hsh = hash_senha(senha_nova)
+    try:
+        import db_pg as _pg
+        if _pg.is_available():
+            _pg.execute("UPDATE usuarios SET salt=%s, hash=%s WHERE login=%s AND ativo=TRUE", (salt, hsh, login))
+            return None
+    except Exception as e:
+        return f"Erro ao alterar no banco: {e}"
     if yaml is None:
         return "pyyaml não disponível."
     fp = os.path.join(base, "config", "usuarios.yaml")
@@ -194,7 +228,6 @@ def alterar_senha(base, login, senha_nova):
             data = yaml.safe_load(f) or {}
         if login not in data.get("usuarios", {}):
             return f"Usuário '{login}' não encontrado."
-        salt, hsh = hash_senha(senha_nova)
         data["usuarios"][login]["salt"] = salt
         data["usuarios"][login]["hash"] = hsh
         _salvar_yaml(base, data)

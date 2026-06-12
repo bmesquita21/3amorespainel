@@ -13,6 +13,12 @@ try:
 except ImportError:
     _DB_DISPONIVEL = False
 
+try:
+    import ofx_upload as _OFX
+    _OFX_DISPONIVEL = True
+except ImportError:
+    _OFX_DISPONIVEL = False
+
 # --- PostgreSQL auxiliar (parametrizações, extratos, usuários) ---
 try:
     import db_pg as _PG
@@ -311,7 +317,7 @@ try:
 except Exception as _e:
     st.sidebar.caption(f"(PDF indisponível: {_e})")
 
-_abas = ["📊 DRE", "🔧 Reapropriar/Verificar", "💰 Receita", "📦 Estoque", "🏦 Fluxo de Caixa", "🧾 Extrato/Reconciliação", "🏛️ Balanço", "📈 Indicadores", "⚙️ Config"]
+_abas = ["📊 DRE", "🔧 Reapropriar/Verificar", "💰 Receita", "📦 Estoque", "🏦 Fluxo de Caixa", "🧾 Extrato/Reconciliação", "🏛️ Balanço", "📈 Indicadores", "⚙️ Config", "📤 Upload OFX"]
 if _auth.is_admin():
     _abas.append("👥 Usuários")
 tabs = st.tabs(_abas)
@@ -1006,7 +1012,7 @@ with tabs[7]:
     st.info("A normalização do **Ativo Biológico (Fase 6)** vai realocar o custo da recria e melhorar a leitura de 2025 (hoje 2025 'parece desastre' pela formação do plantel).")
 
 # ---------------- Config ----------------
-with tabs[8]:
+with tabs[8]:  # noqa: E305
     st.subheader("⚙️ Configurações")
     if _CFG_PG is not None:
         _CFG_PG.render(pasta)
@@ -1038,9 +1044,16 @@ with tabs[8]:
         st.metric("Receita (linhas)", len(_rec) if _rec is not None else 0)
     st.caption(f"Pasta de dados: `{pasta}`")
 
+# ---------------- Upload OFX ----------------
+with tabs[9]:
+    if _OFX_DISPONIVEL:
+        _OFX.render()
+    else:
+        st.warning("Módulo ofx_upload não disponível.")
+
 # ---------------- Usuários (só admin) ----------------
-if _auth.is_admin() and len(tabs) > 9:
-    with tabs[9]:
+if _auth.is_admin() and len(tabs) > 10:
+    with tabs[10]:
         st.subheader("👥 Gerenciar Usuários")
         st.caption("Somente a administradora (Sabrina) vê esta aba.")
 

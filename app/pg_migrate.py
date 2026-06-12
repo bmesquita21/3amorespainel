@@ -79,3 +79,41 @@ def migrate_all(cfg_dir: str):
                   "unidade": r.get("unidade","").strip(),
                   "marca":   r.get("marca","").strip()} for r in rows]
             )
+
+    if _tabela_vazia("config_geral"):
+        yaml_path = os.path.join(cfg_dir, "config_geral.yaml")
+        if os.path.exists(yaml_path):
+            try:
+                import yaml as _yaml
+                with open(yaml_path, encoding="utf-8") as f:
+                    g = _yaml.safe_load(f) or {}
+                bp = (g.get("balanco") or {}) if isinstance(g, dict) else {}
+                ab = (g.get("ativo_biologico") or {}) if isinstance(g, dict) else {}
+                for chave, valor in [
+                    ("capital_social",      str(bp.get("capital_social", "") or "")),
+                    ("saldo_caixa_inicial", str(bp.get("saldo_caixa_inicial", "") or "")),
+                    ("biologico_default",   str(ab.get("tratar_recria_como_ativo", True)).lower()),
+                ]:
+                    PG.execute(
+                        "INSERT INTO config_geral(chave, valor) VALUES(%s,%s) ON CONFLICT(chave) DO NOTHING",
+                        (chave, valor)
+                    )
+            except Exception:
+                pass
+
+    if _tabela_vazia("usuarios"):
+        yaml_path = os.path.join(cfg_dir, "usuarios.yaml")
+        if os.path.exists(yaml_path):
+            try:
+                import yaml as _yaml
+                with open(yaml_path, encoding="utf-8") as f:
+                    data = _yaml.safe_load(f) or {}
+                for login, info in (data.get("usuarios") or {}).items():
+                    PG.execute(
+                        "INSERT INTO usuarios(login, nome, salt, hash) VALUES(%s,%s,%s,%s) "
+                        "ON CONFLICT(login) DO NOTHING",
+                        (login.strip().lower(), info.get("nome", login),
+                         info.get("salt", ""), info.get("hash", ""))
+                    )
+            except Exception:
+                pass
