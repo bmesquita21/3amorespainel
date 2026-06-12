@@ -45,19 +45,27 @@ st.set_page_config(page_title="Painel Financeiro 3 Amores", page_icon="🥚", la
 _brand.aplicar()
 # CSS: sidebar hamburger e tema geral
 st.markdown("""<style>
-[data-testid="stSidebarCollapseButton"] button,
+/* Botão RECOLHER sidebar (dentro da sidebar aberta) */
+[data-testid="stSidebarCollapseButton"] button {
+    background:#ef7736!important;border-radius:10px!important;
+    width:38px!important;height:38px!important;border:2px solid #d4602a!important;
+    box-shadow:0 2px 8px rgba(239,119,54,.45)!important;
+    display:flex!important;align-items:center!important;justify-content:center!important;
+    position:fixed!important;top:12px!important;left:12px!important;z-index:999!important;
+}
+[data-testid="stSidebarCollapseButton"] button:hover{background:#d4602a!important;}
+[data-testid="stSidebarCollapseButton"] button svg{display:none!important;}
+[data-testid="stSidebarCollapseButton"] button::after{content:'☰';font-size:17px;color:white;font-weight:800;}
+/* Botão EXPANDIR sidebar (sidebar recolhida) */
 button[data-testid="collapsedControl"] {
     background:#ef7736!important;border-radius:10px!important;
-    width:40px!important;height:40px!important;border:none!important;
-    box-shadow:0 2px 8px rgba(239,119,54,.4)!important;
+    width:38px!important;height:38px!important;border:2px solid #d4602a!important;
+    box-shadow:0 2px 8px rgba(239,119,54,.45)!important;
     display:flex!important;align-items:center!important;justify-content:center!important;
 }
-[data-testid="stSidebarCollapseButton"] button:hover,
 button[data-testid="collapsedControl"]:hover{background:#d4602a!important;}
-[data-testid="stSidebarCollapseButton"] button svg,
 button[data-testid="collapsedControl"] svg{display:none!important;}
-[data-testid="stSidebarCollapseButton"] button::after,
-button[data-testid="collapsedControl"]::after{content:'☰';font-size:18px;color:white;font-weight:700;}
+button[data-testid="collapsedControl"]::after{content:'☰';font-size:17px;color:white;font-weight:800;}
 section[data-testid="stSidebar"]{transition:all .25s ease;}
 </style>""", unsafe_allow_html=True)
 # Marca a página como pt-BR e "não traduzir": senão a tradução automática do navegador
@@ -273,8 +281,9 @@ with _hs:
         st.markdown("<div style='font-size:.78rem;color:#888;padding-top:6px;'>todos os meses</div>",
                     unsafe_allow_html=True)
 
-# Bloco/CC global — precisa de dfs["despesa"], calculado após per estar definido
+# Bloco/CC global — filtra despesa + receita
 _desp_g = dfs["despesa"]
+_rec_g  = dfs["receita"]
 if len(_desp_g):
     _desp_g = _desp_g.copy()
     _desp_g["bloco"] = _desp_g.apply(_get_bloco, axis=1)
@@ -285,18 +294,22 @@ with _hb:
                                    key="g_blocos", placeholder="Todos os blocos",
                                    label_visibility="collapsed")
 _sel_blocos_g = _sel_blocos_g or _blocos_all_g
-_desp_g_b = _desp_g[_desp_g["bloco"].isin(_sel_blocos_g)] if len(_desp_g) else _desp_g
-_ccs_all_g = sorted(_desp_g_b["cc"].dropna().unique()) if len(_desp_g_b) else []
+_desp_g_b   = _desp_g[_desp_g["bloco"].isin(_sel_blocos_g)] if len(_desp_g) else _desp_g
+_desp_ccs_g = sorted(_desp_g_b["cc"].dropna().unique()) if len(_desp_g_b) else []
+_rec_ccs_g  = sorted({c for c in (_rec_g["cc"].dropna() if "cc" in _rec_g.columns and len(_rec_g) else []) if c})
+_ccs_all_g  = sorted(set(_desp_ccs_g) | set(_rec_ccs_g))
 
 with _hc:
-    _sel_ccs_g = st.multiselect("🏷️ CC", _ccs_all_g, default=[],
-                                key="g_ccs", placeholder="Todos os CCs",
-                                label_visibility="collapsed")
-_sel_ccs_g = _sel_ccs_g or _ccs_all_g
+    _sel_ccs_g_raw = st.multiselect("🏷️ CC", _ccs_all_g, default=[],
+                                    key="g_ccs", placeholder="Todos os CCs",
+                                    label_visibility="collapsed")
+_sel_ccs_g = _sel_ccs_g_raw or _ccs_all_g
 
-# Aplica filtro global de despesas
+# Aplica filtro global (despesa + receita)
 _desp_fil_g = _desp_g_b[_desp_g_b["cc"].isin(_sel_ccs_g)] if len(_desp_g_b) else _desp_g_b
-_filtrou_g  = len(_desp_fil_g) < len(_desp_g)
+_rec_fil_g  = (_rec_g[_rec_g["cc"].isin(_sel_ccs_g)]
+               if _sel_ccs_g_raw and "cc" in _rec_g.columns and len(_rec_g) else None)
+_filtrou_g  = bool(_sel_ccs_g_raw) or len(_desp_fil_g) < len(_desp_g)
 
 # Linha divisória fina
 st.markdown("<hr style='margin:4px 0 2px 0;border:none;border-top:2px solid #ef7736;opacity:.35;'>",
@@ -352,39 +365,70 @@ tabs = st.tabs(_abas)
 
 # ---------------- DRE ----------------
 with tabs[0]:
-    st.subheader(f"DRE Gerencial (competência) — {sel}")
-
-    # ── Filtro de Centro de Custo (afeta faturamento + despesas) ──────────
-    _rec_ccs = sorted({c for c in (rec[rec.periodo.isin(P)]["cc"].dropna() if "cc" in rec.columns and len(rec) else []) if c})
-    _desp_ccs = sorted({c for c in (desp["cc"].dropna() if len(desp) else []) if c and c != "(sem CC)"})
-    _all_ccs_dre = sorted(set(_rec_ccs) | set(_desp_ccs))
-    _sel_cc_dre = st.multiselect(
-        "🏷️ Centro de Custo — filtra faturamento e despesas",
-        options=["(sem CC)"] + _all_ccs_dre, default=[],
-        placeholder="Todos os CCs (sem filtro)",
-        key="dre_cc",
-        help="Selecione CCs para ver somente o faturamento (NFs) e as despesas daquele centro. '(sem CC)' inclui lançamentos sem centro de custo.",
-    )
-
-    # Monta dfs filtrados para o cálculo do DRE
+    # Monta dfs filtrados para o cálculo do DRE (usa filtro global do cabeçalho)
     _dfs_dre = dict(dfs)
-    if _sel_cc_dre:
-        _cc_set = set(_sel_cc_dre)
-        if "cc" in rec.columns and len(rec):
-            _dfs_dre["receita"] = rec[rec["cc"].isin(_cc_set)]
-        if len(desp):
-            _dfs_dre["despesa"] = desp[desp["cc"].isin(_cc_set)]
-        st.caption(f"🔍 CC ativo: {', '.join(_sel_cc_dre)}")
-    elif _filtrou_g:
+    if _filtrou_g:
         _dfs_dre["despesa"] = _desp_fil_g
-        st.caption(f"🔍 Filtro global ativo: {len(_sel_blocos_g)} bloco(s) · {len(_sel_ccs_g)} CC(s) — altere no cabeçalho acima.")
+        if _rec_fil_g is not None:
+            _dfs_dre["receita"] = _rec_fil_g
 
     V_dre = D.compute(_dfs_dre, per, cfg_obj, biologico)
 
-    def _kpi_card(titulo, valor, valor_fmt, cor_pos="#1a7f3c", icone=""):
-        cor = cor_pos if valor >= 0 else "#c0392b"
-        sinal = "▲" if valor > 0 else ("▼" if valor < 0 else "—")
+    # Título com linha descritiva do filtro/período ativo
+    _desc_partes = [f"Período: {sel}"]
+    if _sel_ccs_g_raw:
+        _desc_partes.append(f"CC: {', '.join(_sel_ccs_g_raw)}")
+    if _sel_blocos_g != _blocos_all_g:
+        _desc_partes.append(f"Bloco: {', '.join(_sel_blocos_g)}")
+    _desc_filtro = " · ".join(_desc_partes)
+    st.markdown(f"""<div style="margin-bottom:14px;">
+      <div style="font-size:1.35rem;font-weight:800;color:#3d2008;letter-spacing:.3px;">
+        DRE GERENCIAL (Por Competência)</div>
+      <div style="font-size:.78rem;color:#999;margin-top:3px;">{_desc_filtro}</div>
+    </div>""", unsafe_allow_html=True)
+
+    # Período anterior para comparação nos cards
+    _periodos_set = set(periodos)
+    def _get_per_prev():
+        if not per: return [], ""
+        if modo == "Mês":
+            y, m_ = int(per[0][:4]), int(per[0][5:])
+            m_ -= 1
+            if m_ == 0: m_, y = 12, y - 1
+            p = f"{y}-{m_:02d}"
+            lbl = f"Mês Ant. ({_mes_lbl(p)})" if p in _periodos_set else ""
+            return ([p] if p in _periodos_set else []), lbl
+        elif modo == "Ano":
+            py = str(int(per[0][:4]) - 1)
+            pp = [p for p in periodos if p[:4] == py]
+            return pp, (f"Ano Ant. ({py})" if pp else "")
+        else:
+            n = len(per)
+            y, m_ = int(per[0][:4]), int(per[0][5:])
+            pp = []
+            for _ in range(n):
+                m_ -= 1
+                if m_ == 0: m_, y = 12, y - 1
+                pp.insert(0, f"{y}-{m_:02d}")
+            pp = [p for p in pp if p in _periodos_set]
+            lbl = f"{n} Meses Ant." if n > 1 else "Mês Ant."
+            return pp, (lbl if pp else "")
+    _per_prev, _lbl_prev = _get_per_prev()
+    V_prev = D.compute(_dfs_dre, _per_prev, cfg_obj, biologico) if _per_prev else None
+
+    def _kpi_card(titulo, valor, vp, lbl_prev, icone=""):
+        cor = "#1a7f3c" if valor >= 0 else "#c0392b"
         borda = "#ef7736" if titulo == "Faturamento Bruto" else cor
+        if vp is not None:
+            delta = valor - vp
+            pct = (delta / abs(vp) * 100) if vp != 0 else 0
+            d_cor = "#1a7f3c" if delta >= 0 else "#c0392b"
+            d_sig = "▲" if delta > 0 else ("▼" if delta < 0 else "—")
+            sub = (f'<span style="color:{d_cor};font-weight:700;">{d_sig} {B.brl_compact(abs(delta))}'
+                   f' ({pct:+.1f}%)</span>'
+                   f' <span style="color:#bbb;font-size:.68rem;">{lbl_prev}</span>')
+        else:
+            sub = f'<span style="color:#ccc;">{lbl_prev or "—"}</span>'
         return f"""<div style="background:linear-gradient(135deg,#fffcf9 0%,#fff 100%);
             border:1.5px solid {borda};border-radius:14px;padding:16px 20px;
             box-shadow:0 2px 10px rgba(0,0,0,.07);height:100%;">
@@ -392,15 +436,15 @@ with tabs[0]:
                text-transform:uppercase;margin-bottom:6px;">{icone} {titulo}</div>
           <div style="font-size:1.6rem;font-weight:800;color:#2d1a0e;line-height:1.1;">
             {B.brl_compact(valor)}</div>
-          <div style="font-size:.75rem;color:{cor};font-weight:600;margin-top:4px;">
-            {sinal} {B.brl(abs(valor))}</div>
+          <div style="font-size:.75rem;margin-top:5px;">{sub}</div>
         </div>"""
 
+    def _vp(key): return V_prev[key] if V_prev else None
     _kc = st.columns(4)
-    _kc[0].markdown(_kpi_card("Faturamento Bruto", V_dre["FAT_BRUTO"], B.brl(V_dre["FAT_BRUTO"]), icone="💰"), unsafe_allow_html=True)
-    _kc[1].markdown(_kpi_card("Lucro Bruto",       V_dre["LUCRO_BRUTO"], B.brl(V_dre["LUCRO_BRUTO"]), icone="📦"), unsafe_allow_html=True)
-    _kc[2].markdown(_kpi_card("EBITDA",            V_dre["EBITDA"],      B.brl(V_dre["EBITDA"]),      icone="📊"), unsafe_allow_html=True)
-    _kc[3].markdown(_kpi_card("Lucro Líquido",     V_dre["LUCRO_LIQ"],   B.brl(V_dre["LUCRO_LIQ"]),  icone="🏆"), unsafe_allow_html=True)
+    _kc[0].markdown(_kpi_card("Faturamento Bruto", V_dre["FAT_BRUTO"],   _vp("FAT_BRUTO"),   _lbl_prev, "💰"), unsafe_allow_html=True)
+    _kc[1].markdown(_kpi_card("Lucro Bruto",       V_dre["LUCRO_BRUTO"], _vp("LUCRO_BRUTO"), _lbl_prev, "📦"), unsafe_allow_html=True)
+    _kc[2].markdown(_kpi_card("EBITDA",            V_dre["EBITDA"],      _vp("EBITDA"),      _lbl_prev, "📊"), unsafe_allow_html=True)
+    _kc[3].markdown(_kpi_card("Lucro Líquido",     V_dre["LUCRO_LIQ"],   _vp("LUCRO_LIQ"),   _lbl_prev, "🏆"), unsafe_allow_html=True)
     st.markdown("<div style='margin-bottom:8px;'></div>", unsafe_allow_html=True)
 
     fat = V_dre["FAT_BRUTO"] or 1
