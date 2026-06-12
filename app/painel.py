@@ -25,6 +25,12 @@ try:
 except ImportError:
     _IMOB_DISPONIVEL = False
 
+try:
+    import pdf_upload as _PDF
+    _PDF_DISPONIVEL = True
+except ImportError:
+    _PDF_DISPONIVEL = False
+
 # --- PostgreSQL auxiliar (parametrizações, extratos, usuários) ---
 try:
     import db_pg as _PG
@@ -686,7 +692,7 @@ with tabs[4]:
 with tabs[5]:
     st.subheader(f"Extrato bancário × Sistema — caixa real e reconciliação — {sel}")
     if not len(rs_ex):
-        st.warning("Nenhum extrato bancário encontrado. Importe arquivos OFX na aba **📤 Importar Dados → 🏦 Extratos OFX**.")
+        st.warning("Nenhum extrato bancário encontrado. Importe arquivos OFX ou PDF na aba **📤 Importar Dados**.")
     else:
         op = cfg_obj.saldo_caixa_inicial
         fc_month = _calc_fc_mensal(dfs, tuple(periodos))
@@ -1029,13 +1035,18 @@ with tabs[8]:  # noqa: E305
 
 # ---------------- Importar Dados ----------------
 with tabs[9]:
-    _sub_imp = st.tabs(["🏦 Extratos OFX", "🏗️ Imobilizado"])
+    _sub_imp = st.tabs(["🏦 Extratos OFX", "📄 Extratos PDF (histórico)", "🏗️ Imobilizado"])
     with _sub_imp[0]:
         if _OFX_DISPONIVEL:
             _OFX.render()
         else:
             st.warning("Módulo ofx_upload não disponível.")
     with _sub_imp[1]:
+        if _PDF_DISPONIVEL:
+            _PDF.render()
+        else:
+            st.warning("Módulo pdf_upload não disponível.")
+    with _sub_imp[2]:
         if _IMOB_DISPONIVEL:
             _IMOB.render()
         else:
