@@ -130,6 +130,18 @@ def init_schema():
     CREATE INDEX IF NOT EXISTS idx_extrato_txs_periodo ON extrato_txs(periodo);
     CREATE INDEX IF NOT EXISTS idx_extrato_txs_data    ON extrato_txs(data_tx);
 
+    CREATE TABLE IF NOT EXISTS extrato_saldos (
+        id         SERIAL PRIMARY KEY,
+        banco      TEXT NOT NULL,
+        conta      TEXT NOT NULL,
+        periodo    TEXT NOT NULL,
+        dtasof     DATE,
+        saldo_fim  NUMERIC(15,2) NOT NULL DEFAULT 0,
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(banco, conta, periodo)
+    );
+    CREATE INDEX IF NOT EXISTS idx_extrato_saldos_periodo ON extrato_saldos(periodo);
+
     CREATE TABLE IF NOT EXISTS config_geral (
         chave      TEXT PRIMARY KEY,
         valor      TEXT NOT NULL DEFAULT '',
@@ -311,6 +323,31 @@ def insert_extrato_batch(txs: list) -> tuple:
                 else:
                     skipped += 1
     return inserted, skipped
+
+
+def fetch_extrato_txs() -> list:
+    """Retorna todas as transações de extrato salvas no PG."""
+    return fetchall(
+        "SELECT banco, conta, data_tx, valor, descricao, fitid, periodo "
+        "FROM extrato_txs ORDER BY data_tx, id"
+    )
+
+
+def fetch_extrato_saldos() -> list:
+    """Retorna os saldos de fechamento por conta/período."""
+    return fetchall(
+        "SELECT banco, conta, periodo, dtasof, saldo_fim "
+        "FROM extrato_saldos ORDER BY periodo, banco, conta"
+    )
+
+
+def upsert_extrato_saldo(banco: str, conta: str, periodo: str, saldo_fim: float, dtasof=None):
+    execute("""
+        INSERT INTO extrato_saldos(banco, conta, periodo, dtasof, saldo_fim)
+        VALUES(%s,%s,%s,%s,%s)
+        ON CONFLICT(banco, conta, periodo) DO UPDATE
+          SET saldo_fim=%s, dtasof=%s, updated_at=NOW()
+    """, (banco, conta, periodo, dtasof, saldo_fim, saldo_fim, dtasof))
 
 
 def is_available() -> bool:

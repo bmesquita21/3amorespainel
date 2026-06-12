@@ -76,7 +76,24 @@ def parse_ofx(raw: bytes) -> tuple:
             "classificado": "pendente",
         })
 
-    return banco, conta, txs
+    # Saldo de fechamento (LEDGERBAL) — presente na maioria dos OFX
+    saldo_fim = None
+    dtasof    = None
+    m = re.search(r'<LEDGERBAL>(.*?)(?:</LEDGERBAL>|<[A-Z])', text, re.DOTALL | re.IGNORECASE)
+    if m:
+        bloco_bal = m.group(1)
+        amt = _tag(bloco_bal, "BALAMT")
+        dta = _tag(bloco_bal, "DTASOF")
+        try:
+            saldo_fim = float(amt.replace(",", "."))
+        except Exception:
+            pass
+        try:
+            dtasof = datetime.date(int(dta[:4]), int(dta[4:6]), int(dta[6:8]))
+        except Exception:
+            pass
+
+    return banco, conta, txs, saldo_fim, dtasof
 
 
 # ─── UI Streamlit ─────────────────────────────────────────────────────────────
@@ -130,16 +147,21 @@ def render():
         st.info("☝️ Selecione um ou mais arquivos OFX acima para importar.")
         return
 
-    all_txs = []
+    all_txs    = []
+    saldos_ofx = []   # (banco, conta, periodo, saldo_fim, dtasof)
     for f in uploaded:
-        banco, conta, txs = parse_ofx(f.read())
+        banco, conta, txs, saldo_fim, dtasof = parse_ofx(f.read())
         if not txs:
             st.warning(f"⚠️ **{f.name}**: nenhuma transação encontrada. Verifique se é um OFX válido.")
             continue
         for t in txs:
             t["_arquivo"] = f.name
         all_txs.extend(txs)
-        st.success(f"✅ **{f.name}** — {len(txs)} transações · Banco: **{banco or '(não identificado)'}** · Conta: **{conta or '(não identificada)'}**")
+        if saldo_fim is not None and dtasof is not None:
+            periodo_saldo = f"{dtasof.year}-{dtasof.month:02d}"
+            saldos_ofx.append((banco, conta, periodo_saldo, saldo_fim, dtasof))
+        st.success(f"✅ **{f.name}** — {len(txs)} transações · Banco: **{banco or '(não identificado)'}** · Conta: **{conta or '(não identificada)'}**"
+                   + (f" · Saldo: **R$ {saldo_fim:,.2f}**".replace(",","X").replace(".",",").replace("X",".") if saldo_fim is not None else ""))
 
     if not all_txs:
         return
@@ -163,11 +185,15 @@ def render():
 
     # ── Salvar ───────────────────────────────────────────────────────────────
     if st.button("💾 Salvar no banco de dados", type="primary", use_container_width=True):
-        # Remove coluna auxiliar antes de inserir
         rows_pg = [{k: v for k, v in t.items() if k != "_arquivo"} for t in all_txs]
         inseridas, ignoradas = PG.insert_extrato_batch(rows_pg)
+        for banco, conta, periodo, saldo_fim, dtasof in saldos_ofx:
+            PG.upsert_extrato_saldo(banco, conta, periodo, saldo_fim, dtasof)
+        msg = f"✅ {inseridas} transação(ões) salvas"
         if ignoradas:
-            st.success(f"✅ {inseridas} transação(ões) salvas · {ignoradas} já existiam e foram ignoradas (FITID duplicado).")
-        else:
-            st.success(f"✅ {inseridas} transação(ões) salvas com sucesso!")
+            msg += f" · {ignoradas} já existiam (FITID duplicado)"
+        if saldos_ofx:
+            msg += f" · {len(saldos_ofx)} saldo(s) de fechamento registrado(s)"
+        st.success(msg + ".")
+        st.cache_data.clear()
         st.rerun()

@@ -208,43 +208,72 @@ def _parse_tx(txt, banco):
 
     return dict(tx=tx, abertura=abertura, fechamento=fechamento, fonte_fech=fonte)
 
-def load_transacoes(base):
-    """DataFrame de TODAS as transacoes (1 linha por lancamento) + resumo por conta-mes."""
-    root = os.path.join(base, EXT_DIR)
-    txrows, resumo = [], []
-    if not os.path.isdir(root): return pd.DataFrame(txrows), pd.DataFrame(resumo)
-    for ano in sorted(os.listdir(root)):
-        yp = os.path.join(root, ano)
-        if not (os.path.isdir(yp) and ano.isdigit()): continue
-        for mof in sorted(os.listdir(yp)):
-            mp = os.path.join(yp, mof)
-            if not os.path.isdir(mp): continue
-            try: mes = int(mof.split()[0])
-            except Exception: continue
-            for fn in sorted(os.listdir(mp)):
-                if not fn.lower().endswith(".pdf"): continue
-                try: txt = _read_pdf_text(os.path.join(mp, fn))
-                except Exception: continue
-                banco = _banco(fn, txt)
-                conta = _parse(txt, banco)["conta"]
-                bt = CONTA2TIT.get(conta)
-                banco, titular = bt if bt else (banco, "Filial" if re.search(r"\bF(ILIAL)?\b", fn.upper()) else "Matriz")
-                per = f"{ano}-{mes:02d}"; chave = f"{banco}/{titular} ({conta})"
-                R = _parse_tx(txt, banco)
-                ent = sum(t["valor"] for t in R["tx"] if t["valor"] > 0 and not t["interno"])
-                sai = sum(t["valor"] for t in R["tx"] if t["valor"] < 0 and not t["interno"])
-                flu = sum(t["valor"] for t in R["tx"] if not t["interno"])
-                for t in R["tx"]:
-                    txrows.append(dict(periodo=per, ano=int(ano), mes=mes, banco=banco, titular=titular,
-                        conta=conta, chave=chave, tid=_tid(banco, conta, t["data"], t["valor"]),
-                        data=t["data"], desc=t["desc"], valor=t["valor"],
-                        saldo=t["saldo"], interno=t["interno"]))
-                resumo.append(dict(periodo=per, ano=int(ano), mes=mes, banco=banco, titular=titular,
-                    conta=conta, chave=chave, arquivo=fn, n_tx=len(R["tx"]),
-                    abertura=R["abertura"], entradas=ent, saidas=sai, fluxo=flu,
-                    fech_detectado=R["fechamento"], fonte_fech=R["fonte_fech"]))
-    tx = pd.DataFrame(txrows); rs = pd.DataFrame(resumo)
-    if len(rs): rs = rs.sort_values(["banco", "titular", "ano", "mes"]).reset_index(drop=True)
+def load_transacoes(base=None):
+    """DataFrame de TODAS as transações (1 linha por lançamento) + resumo por conta-mês.
+    Lê do PostgreSQL (tabela extrato_txs). `base` mantido por compatibilidade mas não usado."""
+    try:
+        import db_pg as _pg
+        if not _pg.is_available():
+            return pd.DataFrame(), pd.DataFrame()
+        rows = _pg.fetch_extrato_txs()
+    except Exception:
+        return pd.DataFrame(), pd.DataFrame()
+
+    if not rows:
+        return pd.DataFrame(), pd.DataFrame()
+
+    txrows = []
+    for r in rows:
+        data_tx = r["data_tx"]
+        if hasattr(data_tx, "strftime"):
+            data_str = data_tx.strftime("%d/%m/%Y")
+            ano, mes  = data_tx.year, data_tx.month
+        else:
+            data_str = str(data_tx)
+            try: ano, mes = int(str(data_tx)[:4]), int(str(data_tx)[5:7])
+            except Exception: ano, mes = 0, 0
+
+        banco   = str(r["banco"])
+        conta   = str(r["conta"])
+        bt      = CONTA2TIT.get(conta)
+        titular = bt[1] if bt else "Matriz"
+        if bt:
+            banco = bt[0]
+        chave   = f"{banco}/{titular} ({conta})"
+        periodo = r["periodo"] or f"{ano}-{mes:02d}"
+        valor   = float(r["valor"])
+        desc    = str(r["descricao"])
+        fitid   = str(r["fitid"])
+        interno = bool(INTERNO_RE.search(desc))
+
+        txrows.append(dict(
+            periodo=periodo, ano=ano, mes=mes,
+            banco=banco, titular=titular, conta=conta, chave=chave,
+            tid=fitid,
+            data=data_str, desc=desc, valor=valor,
+            saldo=None, interno=interno,
+        ))
+
+    tx = pd.DataFrame(txrows)
+    if not len(tx):
+        return tx, pd.DataFrame()
+
+    # Resumo por conta-mês
+    resumo_rows = []
+    for keys, grp in tx.groupby(["periodo","ano","mes","banco","titular","conta","chave"]):
+        per, ano, mes, banco, titular, conta, chave = keys
+        ext = grp[~grp.interno]
+        resumo_rows.append(dict(
+            periodo=per, ano=int(ano), mes=int(mes),
+            banco=banco, titular=titular, conta=conta, chave=chave,
+            arquivo="(OFX/PG)", n_tx=len(grp),
+            abertura=None,
+            entradas=float(ext[ext.valor > 0].valor.sum()),
+            saidas=float(ext[ext.valor < 0].valor.sum()),
+            fluxo=float(ext.valor.sum()),
+            fech_detectado=None, fonte_fech="OFX/PG",
+        ))
+    rs = pd.DataFrame(resumo_rows).sort_values(["banco","titular","ano","mes"]).reset_index(drop=True)
     return tx, rs
 
 # ---------------------------------------------------------------------------
@@ -447,10 +476,37 @@ def creditos_outros(tx, periodos=None, overrides=None, top=None):
     return o.head(top) if top else o
 
 def caixa_real_fim(rs, periodo):
-    """Caixa real total no fim de `periodo` = soma do ultimo saldo conhecido de cada conta (<= periodo)."""
+    """Caixa real total no fim de `periodo`.
+    Usa saldos de fechamento do PostgreSQL (extrato_saldos, gravados no upload OFX).
+    Fallback: soma de fluxo acumulado das transações OFX se não houver saldo cadastrado."""
+    alvo = int(periodo[:4]) * 12 + int(periodo[5:])
+
+    # Tenta usar extrato_saldos do PG
+    try:
+        import db_pg as _pg
+        if _pg.is_available():
+            srows = _pg.fetch_extrato_saldos()
+            if srows:
+                df_s = pd.DataFrame(srows)
+                df_s["ord"] = df_s["periodo"].map(lambda p: int(p[:4]) * 12 + int(p[5:]))
+                df_s["chave"] = df_s.apply(
+                    lambda r: f"{CONTA2TIT.get(str(r['conta']), (str(r['banco']), 'Matriz'))[0]}/"
+                              f"{CONTA2TIT.get(str(r['conta']), (str(r['banco']), 'Matriz'))[1]} ({r['conta']})", axis=1)
+                df_s = df_s[df_s.ord <= alvo]
+                if len(df_s):
+                    last = df_s.sort_values("ord").groupby("chave", as_index=False).tail(1)
+                    last["saldo_fim"] = last["saldo_fim"].astype(float)
+                    last["aprox"] = False
+                    total = float(last["saldo_fim"].fillna(0).sum())
+                    return total, last[["chave", "banco", "conta", "periodo", "saldo_fim", "aprox"]]
+    except Exception:
+        pass
+
+    # Fallback: usa tabela de resumo por período (baseada nas transações OFX)
+    if rs is None or not len(rs):
+        return 0.0, pd.DataFrame()
     d = tabela_saldos(rs)
     if not len(d): return 0.0, d
-    alvo = int(periodo[:4]) * 12 + int(periodo[5:])
     d = d[d.ord <= alvo]
     if not len(d): return 0.0, d
     last = d.sort_values("ord").groupby("chave", as_index=False).tail(1)

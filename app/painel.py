@@ -66,9 +66,9 @@ def carregar_do_banco(base):
     cfg = C.load(os.path.join(base, "config"))
     return _IDB.load_all_db(cfg)
 
-@st.cache_data(show_spinner="Lendo extratos bancários (PDF)...")
-def carregar_extratos(base):
-    try: return EX.load_transacoes(base)
+@st.cache_data(show_spinner="Carregando extratos bancários...", ttl=1800)
+def carregar_extratos():
+    try: return EX.load_transacoes()
     except Exception:
         import pandas as _pd
         return _pd.DataFrame(), _pd.DataFrame()
@@ -271,7 +271,7 @@ desp, rec = dfs["despesa"], dfs["receita"]
 P = set(per)
 bal = lambda dest: float(desp[(desp.destino == dest) & (desp.periodo.isin(P))].valor.sum()) if len(desp) else 0.0
 
-tx_ex, rs_ex = carregar_extratos(pasta)
+tx_ex, rs_ex = carregar_extratos()
 caixa_real_v, caixa_brk = (EX.caixa_real_fim(rs_ex, per[-1]) if len(rs_ex) else (None, None))
 overrides_ex = EX.carregar_overrides(pasta) if len(tx_ex) else {}
 _bk = _calc_buckets(tx_ex if len(tx_ex) else None, per[-1], overrides_ex)
@@ -686,7 +686,7 @@ with tabs[4]:
 with tabs[5]:
     st.subheader(f"Extrato bancário × Sistema — caixa real e reconciliação — {sel}")
     if not len(rs_ex):
-        st.warning("Não li os extratos (pasta `1.3 EXTRATO`). Confira o caminho e clique 🔄 Atualizar.")
+        st.warning("Nenhum extrato bancário encontrado. Importe arquivos OFX na aba **📤 Importar Dados → 🏦 Extratos OFX**.")
     else:
         op = cfg_obj.saldo_caixa_inicial
         fc_month = _calc_fc_mensal(dfs, tuple(periodos))
