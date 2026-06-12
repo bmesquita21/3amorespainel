@@ -29,13 +29,12 @@ _QUITADO = {2}
 # Tabela de cabeçalho de NF (empresa 01, centro contábil 001)
 _FATNOTAF = "FATNOTAF01001"
 
-# Situações válidas para receita (NF impressa/autorizada)
-_SITUACAO_VALIDA = "IMPRESSA"
+# SITUACAO: 'I'=Impressa/Autorizada  'N'=Em digitação  'C'=Cancelada
+_SITUACAO_VALIDA = "I"
 
-# Naturezas de operação que correspondem a operações econômicas (vendas reais).
-# Execute tools/probe_fatnotaf.py no VPS para confirmar os valores e ajuste aqui.
-# Deixe None para não filtrar por natureza enquanto os valores não forem confirmados.
-_NATUREZAS_ECONOMICAS: list | None = None
+# CFOPs de operações econômicas (vendas reais de produto/serviço).
+# 5.910=remessa  5.927=baixa romaneio  5.201/6.201=devolução compra  5/6.949=outras
+_CFOP_ECONOMICO = ("5.101", "6.101", "5.414", "5.556")
 
 
 # ─── Utilitários ─────────────────────────────────────────────────────────────
@@ -205,14 +204,10 @@ def ingest_receita_db(cfg, conn=None) -> pd.DataFrame:
     """Receitas por DATA DE EMISSÃO da NF — equivalente a ingest_receita().
 
     Filtra via FATNOTAF01001:
-      - SITUACAO = 'IMPRESSA'  → exclui canceladas, em digitação, devolvidas, etc.
-      - NATUREZA (opcional)    → quando _NATUREZAS_ECONOMICAS for definido, inclui
-                                  apenas operações econômicas (vendas reais).
+      - SITUACAO = 'I' (Impressa/Autorizada) — exclui em digitação ('N') e canceladas ('C')
+      - CFOP em _CFOP_ECONOMICO — exclui remessas, devoluções e lançamentos internos
     """
-    nat_filter = ""
-    if _NATUREZAS_ECONOMICAS:
-        placeholders = ", ".join(f"'{n}'" for n in _NATUREZAS_ECONOMICAS)
-        nat_filter = f"AND TRIM(f.NATUREZA) IN ({placeholders})"
+    cfop_in = ", ".join(f"'{c}'" for c in _CFOP_ECONOMICO)
 
     sql = f"""
         SELECT
@@ -226,8 +221,8 @@ def ingest_receita_db(cfg, conn=None) -> pd.DataFrame:
         JOIN {_FATNOTAF} f      ON f.CONT_NOTA = v.CONT_NOTA
         WHERE v.DATAEMISSAO IS NOT NULL
           AND i.SUBTOTAL > 0
-          AND TRIM(f.SITUACAO) = '{_SITUACAO_VALIDA}'
-          {nat_filter}
+          AND f.SITUACAO = '{_SITUACAO_VALIDA}'
+          AND TRIM(f.CFOP) IN ({cfop_in})
         ORDER BY v.DATAEMISSAO
     """
     close = conn is None
