@@ -355,18 +355,25 @@ def ingest_fc_entradas_db(conn=None) -> pd.DataFrame:
 # ─── Estoque / Ração ─────────────────────────────────────────────────────────
 
 def ingest_racao_db(conn=None) -> pd.DataFrame:
-    """Entradas/saídas de insumos do almoxarifado."""
+    """Consumo de ração por alojamento com custo real.
+
+    Fonte: AVIALRAC01001 (consumo de ração registrado no módulo de avicultura)
+           ESTPRODU01     (cadastro de produtos — descrição da ração)
+    """
     sql = """
         SELECT
-            e.DATAMOVIMENTO AS DATA_MOV,
-            e.DESCRICAO     AS DESCRICAO,
-            e.QTD_ENTRADA   AS QTD_ENTRADA,
-            e.QTD_SAIDA     AS QTD_SAIDA,
-            e.NOME          AS ALMOXARIFADO
-        FROM VS_ENTRADASAIDA e
-        WHERE e.DATAMOVIMENTO IS NOT NULL
-          AND (e.QTD_ENTRADA > 0 OR e.QTD_SAIDA > 0)
-        ORDER BY e.DATAMOVIMENTO
+            r.DATA              AS DATA_MOV,
+            r.CONT_ALOJAMENTO   AS ALOJAMENTO,
+            r.CODIGO            AS COD_PRODUTO,
+            TRIM(COALESCE(e.DESCRICAO, '')) AS DESCRICAO,
+            r.QUANTIDADE        AS QUANTIDADE,
+            r.CUSTOCONTABIL     AS CUSTO_UNIT,
+            r.SUBTOTAL          AS SUBTOTAL
+        FROM AVIALRAC01001 r
+        LEFT JOIN ESTPRODU01 e ON e.CODIGO = r.CODIGO
+        WHERE r.DATA IS NOT NULL
+          AND r.QUANTIDADE > 0
+        ORDER BY r.DATA
     """
     close = conn is None
     if conn is None:
@@ -382,27 +389,30 @@ def ingest_racao_db(conn=None) -> pd.DataFrame:
         d = _to_date(r["DATA_MOV"])
         if d is None:
             continue
-        desc = _str(r["DESCRICAO"])
+        qtd = float(r["QUANTIDADE"] or 0)
+        if qtd == 0:
+            continue
+
+        subtotal   = float(r["SUBTOTAL"]   or 0)
+        custo_unit = float(r["CUSTO_UNIT"] or 0)
+        custo_total = subtotal if subtotal else custo_unit * qtd
+
+        desc = _str(r["DESCRICAO"]) or f"Ração {_str(r['COD_PRODUTO'])}"
         du = desc.upper()
-        if "OVOS" in du:
-            fase = "OVOS"
-        elif "PRE POSTURA" in du or "PRE-POSTURA" in du:
+        if "PRE POSTURA" in du or "PRE-POSTURA" in du or "RECRIA" in du:
             fase = "RECRIA"
         elif "POSTURA" in du:
             fase = "POSTURA"
-        elif any(k in du for k in ("RAÇÃO", "RACAO", "NUCLEO", "FARELO", "MILHO",
-                                    "SOJA", "PREMIX", "CONCENTRADO")):
-            fase = "POSTURA"
         else:
-            fase = "OUTRO"
+            fase = "POSTURA"  # AVIALRAC contém apenas ração; default = POSTURA
 
         rows.append(dict(
             periodo=B.period(d), ano=d.year, mes=d.month, data=d,
             descricao=desc,
-            galpao=_str(r["ALMOXARIFADO"]),
+            galpao=_str(r["ALOJAMENTO"]),
             fase=fase,
-            qtd=float(r["QTD_ENTRADA"] or 0),
-            custo=0.0,
+            qtd=qtd,
+            custo=custo_total,
         ))
     return pd.DataFrame(rows)
 
