@@ -204,39 +204,68 @@ def tabela_drill(df, grupo, valor="valor", *, key, det_cols=None, col_label=None
         st.caption("👆 Clique numa linha para rastrear os lançamentos que somam o valor.")
 
 # ---------------- Sidebar ----------------
-st.sidebar.markdown("""
-<div style='text-align:center;padding:8px 0 4px 0'>
-  <div style='font-size:2rem;'>🥚</div>
-  <div style='font-size:1.05rem;font-weight:800;color:#e5dfcc;letter-spacing:1px;'>TRES AMORES AGRONEGÓCIO</div>
-  <div style='font-size:0.68rem;color:#c4b49a;letter-spacing:2px;text-transform:uppercase;'>Painel Financeiro</div>
-</div>
-""", unsafe_allow_html=True)
-_auth.logout_button()
-pasta = st.sidebar.text_input("📁 Pasta de dados", value=DADOS)
-
-if st.sidebar.button("🔄 Atualizar dados", use_container_width=True):
-    st.cache_data.clear(); st.rerun()
+pasta = DADOS
 
 try:
     dfs = carregar_do_banco(pasta)
 except Exception as e:
     st.error(f"Erro ao carregar banco de dados:\n\n{e}"); st.stop()
 
-st.sidebar.success("🔌 Conectado ao banco Firebird")
-
-if _PG_DISPONIVEL:
-    if _PG.is_available():
-        st.sidebar.success("🐘 PostgreSQL conectado")
-    else:
-        st.sidebar.warning("🐘 PostgreSQL indisponível")
-
 cfg_obj = C.load(os.path.join(pasta, "config"))
 periodos = dfs["periodos"]
 if not periodos:
-    st.warning("Nenhum dado encontrado na pasta. Confira o caminho e clique Atualizar."); st.stop()
+    st.warning("Nenhum dado encontrado. Clique em Atualizar dados."); st.stop()
 periodos = sorted(periodos)
 anos = sorted({p[:4] for p in periodos})
-st.sidebar.caption("📅 **Período:** filtro no **topo da tela** — vale p/ todas as abas.")
+
+# Identidade do usuário logado
+_nome_usuario = str(_USUARIO) if _USUARIO else "Usuário"
+
+st.sidebar.markdown(f"""
+<div style='text-align:center;padding:12px 0 8px 0'>
+  <div style='font-size:2.2rem;'>🥚</div>
+  <div style='font-size:1rem;font-weight:800;color:#e5dfcc;letter-spacing:1px;margin-top:4px;'>TRES AMORES AGRONEGÓCIO</div>
+  <div style='font-size:.65rem;color:#c4b49a;letter-spacing:2px;text-transform:uppercase;margin-top:2px;'>Painel Financeiro</div>
+  <div style='font-size:.75rem;color:#d4b896;margin-top:8px;'>👤 {_nome_usuario}</div>
+</div>
+""", unsafe_allow_html=True)
+
+st.sidebar.markdown("---")
+
+# Navegação por módulo
+st.sidebar.markdown("<div style='font-size:.68rem;color:#a08060;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px;padding-left:4px;'>Módulos</div>", unsafe_allow_html=True)
+_MODULOS = [
+    ("🏠", "Início"),
+    ("📊", "DRE"),
+    ("🔧", "Reapropriar/Verificar"),
+    ("💰", "Receita"),
+    ("📦", "Estoque"),
+    ("🏦", "Fluxo de Caixa"),
+    ("🧾", "Extrato/Reconciliação"),
+    ("🏛️", "Balanço"),
+    ("📈", "Indicadores"),
+    ("⚙️", "Config"),
+    ("📤", "Importar Dados"),
+]
+if _auth.is_admin():
+    _MODULOS.append(("👥", "Usuários"))
+
+if "modulo_ativo" not in st.session_state:
+    st.session_state["modulo_ativo"] = "Início"
+
+for _ico, _mod in _MODULOS:
+    _ativo = st.session_state["modulo_ativo"] == _mod
+    _estilo = ("background:#ef7736;color:white;font-weight:700;" if _ativo
+               else "background:rgba(255,255,255,.06);color:#e5dfcc;")
+    if st.sidebar.button(f"{_ico}  {_mod}", key=f"nav_{_mod}", use_container_width=True):
+        st.session_state["modulo_ativo"] = _mod
+        st.rerun()
+
+st.sidebar.markdown("---")
+
+if st.sidebar.button("🔄 Atualizar dados", use_container_width=True, type="primary"):
+    st.cache_data.clear(); st.rerun()
+_auth.logout_button()
 
 def _get_bloco(row):
     g, s = str(row.get("grupo", "")), str(row.get("subgrupo", ""))
@@ -318,8 +347,8 @@ st.markdown("<hr style='margin:4px 0 2px 0;border:none;border-top:2px solid #ef7
 if dfs["dropped"]:
     st.sidebar.warning("Duplicados ignorados:\n" + "\n".join("• " + d for d in dfs["dropped"]))
 
-biologico = st.sidebar.checkbox("🐔 Tratar recria como ativo biológico", value=cfg_obj.biologico_default,
-    help="Liga: capitaliza o custo de recria e amortiza na postura (contra GS02). Desliga: recria vira despesa no período (visão 'crua' — 2025 parece desastre).")
+biologico = st.sidebar.checkbox("🐔 Ativo biológico", value=cfg_obj.biologico_default,
+    help="Liga: capitaliza o custo de recria e amortiza na postura (contra GS02). Desliga: recria vira despesa no período.")
 
 _per_tuple = tuple(per)   # tuple é hasheável → permite cache por período
 
@@ -358,13 +387,59 @@ try:
 except Exception as _e:
     st.sidebar.caption(f"(PDF indisponível: {_e})")
 
-_abas = ["📊 DRE", "🔧 Reapropriar/Verificar", "💰 Receita", "📦 Estoque", "🏦 Fluxo de Caixa", "🧾 Extrato/Reconciliação", "🏛️ Balanço", "📈 Indicadores", "⚙️ Config", "📤 Importar Dados"]
-if _auth.is_admin():
-    _abas.append("👥 Usuários")
-tabs = st.tabs(_abas)
+_modulo = st.session_state.get("modulo_ativo", "Início")
+
+# ---------------- INÍCIO ----------------
+if _modulo == "Início":
+    _primer = _nome_usuario.split()[0] if _nome_usuario else "Usuário"
+    st.markdown(f"""
+    <div style="padding:32px 8px 16px 8px;">
+      <div style="font-size:2rem;font-weight:800;color:#3d2008;">
+        👋 Seja bem-vindo, {_primer}!
+      </div>
+      <div style="font-size:1rem;color:#888;margin-top:6px;">
+        Painel Financeiro Gerencial · Tres Amores Agronegócio
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    _ci = st.columns(3)
+    with _ci[0]:
+        st.markdown(f"""<div style="background:#fff8f4;border:1.5px solid #ef7736;border-radius:12px;padding:20px;">
+          <div style="font-size:.7rem;color:#a07850;font-weight:700;letter-spacing:.8px;text-transform:uppercase;">💰 Faturamento · {sel}</div>
+          <div style="font-size:1.7rem;font-weight:800;color:#2d1a0e;margin-top:6px;">{B.brl_compact(V.get("FAT_BRUTO", 0))}</div>
+        </div>""", unsafe_allow_html=True)
+    with _ci[1]:
+        _lb = V.get("LUCRO_BRUTO", 0)
+        _c = "#1a7f3c" if _lb >= 0 else "#c0392b"
+        st.markdown(f"""<div style="background:#fff8f4;border:1.5px solid {_c};border-radius:12px;padding:20px;">
+          <div style="font-size:.7rem;color:#a07850;font-weight:700;letter-spacing:.8px;text-transform:uppercase;">📦 Lucro Bruto · {sel}</div>
+          <div style="font-size:1.7rem;font-weight:800;color:{_c};margin-top:6px;">{B.brl_compact(_lb)}</div>
+        </div>""", unsafe_allow_html=True)
+    with _ci[2]:
+        _llv = V.get("LUCRO_LIQ", 0)
+        _c2 = "#1a7f3c" if _llv >= 0 else "#c0392b"
+        st.markdown(f"""<div style="background:#fff8f4;border:1.5px solid {_c2};border-radius:12px;padding:20px;">
+          <div style="font-size:.7rem;color:#a07850;font-weight:700;letter-spacing:.8px;text-transform:uppercase;">🏆 Lucro Líquido · {sel}</div>
+          <div style="font-size:1.7rem;font-weight:800;color:{_c2};margin-top:6px;">{B.brl_compact(_llv)}</div>
+        </div>""", unsafe_allow_html=True)
+
+    st.markdown("<div style='margin-top:28px;margin-bottom:8px;font-size:.85rem;color:#888;'>Acesse os módulos pelo menu lateral</div>", unsafe_allow_html=True)
+    _atalhos = [
+        ("📊", "DRE", "Resultado por competência"),
+        ("💰", "Receita", "Faturamento e clientes"),
+        ("🏦", "Fluxo de Caixa", "Entradas e saídas de caixa"),
+        ("🏛️", "Balanço", "Patrimonial consolidado"),
+        ("📈", "Indicadores", "KPIs gerenciais"),
+    ]
+    _ca = st.columns(len(_atalhos))
+    for _idx, (_ico, _mod, _desc) in enumerate(_atalhos):
+        with _ca[_idx]:
+            if st.button(f"{_ico}\n\n**{_mod}**\n\n{_desc}", key=f"atal_{_mod}", use_container_width=True):
+                st.session_state["modulo_ativo"] = _mod; st.rerun()
 
 # ---------------- DRE ----------------
-with tabs[0]:
+elif _modulo == "DRE":
     # Monta dfs filtrados para o cálculo do DRE (usa filtro global do cabeçalho)
     _dfs_dre = dict(dfs)
     if _filtrou_g:
@@ -619,7 +694,7 @@ def _filtro_bloco_cc(df_src, key_prefix):
     return df_b[df_b["cc"].isin(sel_c)]
 
 # ---------------- Reapropriar ----------------
-with tabs[1]:
+elif _modulo == "Reapropriar/Verificar":
     st.subheader("Reapropriar / Verificar — lançamentos sem CC ou sem conta (fora da DRE)")
     rea = desp[(desp.destino == "REAPROPRIAR") & (desp.periodo.isin(P))] if len(desp) else desp
     st.metric("Total a reapropriar", B.brl(float(rea.valor.sum()) if len(rea) else 0))
@@ -638,7 +713,7 @@ with tabs[1]:
         st.info("Corrija o Centro de Custo / Conta na fonte e clique Atualizar — o lançamento flui sozinho para o lugar certo.")
 
 # ---------------- Receita ----------------
-with tabs[2]:
+elif _modulo == "Receita":
     st.subheader("Receita (emissão / competência)")
     rok = rec[(rec.destino == "RECEITA") & (rec.periodo.isin(P))] if len(rec) else rec
     if len(rok):
@@ -657,7 +732,7 @@ with tabs[2]:
         st.caption(f"Descarte de aves (não é receita; Fase 6): {B.brl(float(desc.valor.sum()))}")
 
 # ---------------- Estoque ----------------
-with tabs[3]:
+elif _modulo == "Estoque":
     st.subheader("Estoque / CMV por consumo")
     prod = dfs.get("producao")
     if prod is not None and len(prod):
@@ -699,7 +774,7 @@ with tabs[3]:
                f"{'✅ Tratamento LIGADO' if biologico else '⚠️ Tratamento DESLIGADO (recria vira despesa)'} — alterne na barra lateral.")
 
 # ---------------- Fluxo de Caixa ----------------
-with tabs[4]:
+elif _modulo == "Fluxo de Caixa":
     st.subheader(f"Fluxo de Caixa — Sistema (regime de caixa) — {sel}")
     Fv = _calc_fc(dfs, _per_tuple)
     k = st.columns(4)
@@ -817,7 +892,7 @@ with tabs[4]:
         st.caption("Duplicados ignorados (saídas): " + ", ".join(dfs["fc_dropped"]))
 
 # ---------------- Extrato / Reconciliação ----------------
-with tabs[5]:
+elif _modulo == "Extrato/Reconciliação":
     st.subheader(f"Extrato bancário × Sistema — caixa real e reconciliação — {sel}")
     if not len(rs_ex):
         st.warning("Nenhum extrato bancário encontrado. Importe arquivos OFX ou PDF na aba **📤 Importar Dados**.")
@@ -925,7 +1000,7 @@ with tabs[5]:
                 "Netagem das transferências intercompany + refino do Santander = Fase 7.")
 
 # ---------------- Balanço ----------------
-with tabs[6]:
+elif _modulo == "Balanço":
     st.subheader(f"Balanço Patrimonial (gerencial) — posição em {per[-1]}")
     Bv = _calc_bp(dfs, _per_tuple, cfg_obj, biologico, caixa_real_v, adiant_v, aporte_v, emprest_v)
     k = st.columns(4)
@@ -1111,7 +1186,7 @@ with tabs[6]:
         st.caption("*Aproximações: **Contas a Receber/Estoque**. A **Diferença a investigar** ≈ aportes/empréstimos do grupo ainda não rotulados — aba 🧾 Extrato, baixe o Excel e preencha *natureza*.")
 
 # ---------------- Indicadores ----------------
-with tabs[7]:
+elif _modulo == "Indicadores":
     st.subheader(f"Indicadores (DRE × Balanço) — {sel}")
     ind, Bv = _calc_indicadores(dfs, _per_tuple, cfg_obj, biologico, caixa_real_v, adiant_v, aporte_v, emprest_v)
     def _pct(x): return f"{100*x:.1f}%" if x is not None else "—"
@@ -1130,7 +1205,7 @@ with tabs[7]:
     st.info("A normalização do **Ativo Biológico (Fase 6)** vai realocar o custo da recria e melhorar a leitura de 2025 (hoje 2025 'parece desastre' pela formação do plantel).")
 
 # ---------------- Config ----------------
-with tabs[8]:  # noqa: E305
+elif _modulo == "Config":  # noqa: E305
     _cfg_abas = ["⚙️ Parâmetros", "📊 Status", "🔬 Diagnóstico BD"] if _auth.is_admin() else ["⚙️ Parâmetros", "📊 Status"]
     _cfg_tabs = st.tabs(_cfg_abas)
 
@@ -1336,7 +1411,7 @@ with tabs[8]:  # noqa: E305
                         st.error(f"Erro: {_e}")
 
 # ---------------- Importar Dados ----------------
-with tabs[9]:
+elif _modulo == "Importar Dados":
     _sub_imp = st.tabs(["🏦 Extratos OFX", "📄 Extratos PDF (histórico)", "🏗️ Imobilizado"])
     with _sub_imp[0]:
         if _OFX_DISPONIVEL:
@@ -1355,8 +1430,7 @@ with tabs[9]:
             st.warning("Módulo imob_upload não disponível.")
 
 # ---------------- Usuários (só admin) ----------------
-if _auth.is_admin() and len(tabs) > 10:
-    with tabs[10]:
+elif _modulo == "Usuários" and _auth.is_admin():
         st.subheader("👥 Gerenciar Usuários")
         st.caption("Somente a administradora (Sabrina) vê esta aba.")
 
