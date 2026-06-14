@@ -56,22 +56,25 @@ button[data-testid="collapsedControl"]:hover {
 }
 section[data-testid="stSidebar"]{transition:all .25s ease;}
 /* Botões de módulo — fonte escura no hover (contraste com fundo amarelo ativo) */
-section[data-testid="stSidebar"] .stButton button:hover,
-section[data-testid="stSidebar"] .stButton button:focus,
-section[data-testid="stSidebar"] .stButton button:active {color:#111!important;}
-/* Botão Excel — verde */
-.btn-excel div[data-testid="stDownloadButton"] button {
-    background:#1D6F42!important;color:white!important;font-weight:700!important;border:none!important;border-radius:8px!important;
+section[data-testid="stSidebar"] div[data-testid="stBaseButton-secondary"]:hover,
+section[data-testid="stSidebar"] div[data-testid="stBaseButton-secondary"]:focus-within {color:#111!important;}
+section[data-testid="stSidebar"] .stButton > button[kind="secondary"]:hover,
+section[data-testid="stSidebar"] .stButton > button[kind="secondary"]:focus {color:#111!important;}
+/* Botões de export na sidebar — 1º download=Excel(verde), 2º download=PDF(vermelho) */
+section[data-testid="stSidebar"] div[data-testid="stDownloadButton"]:nth-of-type(1) button {
+    background:#1D6F42!important;color:white!important;font-weight:700!important;border:none!important;
 }
-.btn-excel div[data-testid="stDownloadButton"] button:hover {background:#175a35!important;color:white!important;}
-/* Botão PDF — vermelho */
-.btn-pdf div[data-testid="stDownloadButton"] button {
-    background:#c0392b!important;color:white!important;font-weight:700!important;border:none!important;border-radius:8px!important;
+section[data-testid="stSidebar"] div[data-testid="stDownloadButton"]:nth-of-type(1) button:hover {
+    background:#175a35!important;color:white!important;
 }
-.btn-pdf div[data-testid="stDownloadButton"] button:hover {background:#a93226!important;color:white!important;}
-/* Spinner — esconde o texto, mantém o ícone girando */
-div[data-testid="stSpinner"] p,
-div[data-testid="stSpinner"] span { display:none!important; }
+section[data-testid="stSidebar"] div[data-testid="stDownloadButton"]:nth-of-type(2) button {
+    background:#c0392b!important;color:white!important;font-weight:700!important;border:none!important;
+}
+section[data-testid="stSidebar"] div[data-testid="stDownloadButton"]:nth-of-type(2) button:hover {
+    background:#a93226!important;color:white!important;
+}
+/* Spinner — esconde só o texto, mantém o ícone */
+div[data-testid="stSpinner"] > div > p { display:none!important; }
 </style>""", unsafe_allow_html=True)
 # Marca a página como pt-BR e "não traduzir": senão a tradução automática do navegador
 # troca "mil" por "milhões" nos KPIs (é bug do TRADUTOR, não do cálculo). Best-effort.
@@ -436,47 +439,15 @@ def _filtro_bloco_cc(df_src, key_prefix):
 if _modulo == "Início":
     _primer = _nome_usuario.split()[0] if _nome_usuario else "Usuário"
     st.markdown(f"""
-    <div style="padding:32px 8px 20px 8px;">
-      <div style="font-size:2rem;font-weight:800;color:#3d2008;">
+    <div style="padding:40px 8px 16px 8px;">
+      <div style="font-size:2.2rem;font-weight:800;color:#3d2008;">
         👋 Seja bem-vindo, {_primer}!
+      </div>
+      <div style="font-size:1rem;color:#888;margin-top:8px;">
+        Painel Financeiro Gerencial · Tres Amores Agronegócio
       </div>
     </div>
     """, unsafe_allow_html=True)
-
-    _ci = st.columns(3)
-    with _ci[0]:
-        st.markdown(f"""<div style="background:#fff8f4;border:1.5px solid #ef7736;border-radius:12px;padding:20px;">
-          <div style="font-size:.7rem;color:#a07850;font-weight:700;letter-spacing:.8px;text-transform:uppercase;">💰 Faturamento · {sel}</div>
-          <div style="font-size:1.7rem;font-weight:800;color:#2d1a0e;margin-top:6px;">{B.brl_compact(V.get("FAT_BRUTO", 0))}</div>
-        </div>""", unsafe_allow_html=True)
-    with _ci[1]:
-        _lb = V.get("LUCRO_BRUTO", 0)
-        _c = "#1a7f3c" if _lb >= 0 else "#c0392b"
-        st.markdown(f"""<div style="background:#fff8f4;border:1.5px solid {_c};border-radius:12px;padding:20px;">
-          <div style="font-size:.7rem;color:#a07850;font-weight:700;letter-spacing:.8px;text-transform:uppercase;">📦 Lucro Bruto · {sel}</div>
-          <div style="font-size:1.7rem;font-weight:800;color:{_c};margin-top:6px;">{B.brl_compact(_lb)}</div>
-        </div>""", unsafe_allow_html=True)
-    with _ci[2]:
-        _llv = V.get("LUCRO_LIQ", 0)
-        _c2 = "#1a7f3c" if _llv >= 0 else "#c0392b"
-        st.markdown(f"""<div style="background:#fff8f4;border:1.5px solid {_c2};border-radius:12px;padding:20px;">
-          <div style="font-size:.7rem;color:#a07850;font-weight:700;letter-spacing:.8px;text-transform:uppercase;">🏆 Lucro Líquido · {sel}</div>
-          <div style="font-size:1.7rem;font-weight:800;color:{_c2};margin-top:6px;">{B.brl_compact(_llv)}</div>
-        </div>""", unsafe_allow_html=True)
-
-    st.markdown("<div style='margin-top:28px;margin-bottom:8px;font-size:.85rem;color:#888;'>Acesse os módulos pelo menu lateral</div>", unsafe_allow_html=True)
-    _atalhos = [
-        ("📊", "DRE", "Resultado por competência"),
-        ("💰", "Receita", "Faturamento e clientes"),
-        ("🏦", "Fluxo de Caixa", "Entradas e saídas de caixa"),
-        ("🏛️", "Balanço", "Patrimonial consolidado"),
-        ("📈", "Indicadores", "KPIs gerenciais"),
-    ]
-    _ca = st.columns(len(_atalhos))
-    for _idx, (_ico, _mod, _desc) in enumerate(_atalhos):
-        with _ca[_idx]:
-            if st.button(f"{_ico}\n\n**{_mod}**\n\n{_desc}", key=f"atal_{_mod}", use_container_width=True):
-                st.session_state["modulo_ativo"] = _mod; st.rerun()
 
 # ---------------- DRE ----------------
 elif _modulo == "DRE":
