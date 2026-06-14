@@ -55,11 +55,12 @@ button[data-testid="collapsedControl"]:hover {
     background:rgba(255,255,255,.12)!important;border-radius:6px!important;
 }
 section[data-testid="stSidebar"]{transition:all .25s ease;}
-/* Botões de módulo — fonte escura no hover (contraste com fundo amarelo ativo) */
-section[data-testid="stSidebar"] div[data-testid="stBaseButton-secondary"]:hover,
-section[data-testid="stSidebar"] div[data-testid="stBaseButton-secondary"]:focus-within {color:#111!important;}
-section[data-testid="stSidebar"] .stButton > button[kind="secondary"]:hover,
-section[data-testid="stSidebar"] .stButton > button[kind="secondary"]:focus {color:#111!important;}
+/* Botões de módulo — sombra de escurecimento no hover/focus */
+section[data-testid="stSidebar"] .stButton > button:hover,
+section[data-testid="stSidebar"] .stButton > button:focus {
+    filter:brightness(.88)!important;
+    box-shadow:inset 0 0 0 100px rgba(0,0,0,.12)!important;
+}
 /* Botões de export na sidebar — 1º download=Excel(verde), 2º download=PDF(vermelho) */
 section[data-testid="stSidebar"] div[data-testid="stDownloadButton"]:nth-of-type(1) button {
     background:#1D6F42!important;color:white!important;font-weight:700!important;border:none!important;
@@ -440,10 +441,10 @@ if _modulo == "Início":
     _primer = _nome_usuario.split()[0] if _nome_usuario else "Usuário"
     st.markdown(f"""
     <div style="padding:40px 8px 16px 8px;">
-      <div style="font-size:2.2rem;font-weight:800;color:#3d2008;">
-        👋 Seja bem-vindo, {_primer}!
+      <div style="font-size:2.6rem;font-weight:800;color:#3d2008;line-height:1.2;">
+        👋 Seja Bem Vindo(a), {_primer}!
       </div>
-      <div style="font-size:1rem;color:#888;margin-top:8px;">
+      <div style="font-size:1.15rem;color:#888;margin-top:10px;">
         Painel Financeiro Gerencial · Tres Amores Agronegócio
       </div>
     </div>
