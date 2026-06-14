@@ -45,28 +45,33 @@ st.set_page_config(page_title="Painel Financeiro 3 Amores", page_icon="🥚", la
 _brand.aplicar()
 # CSS: sidebar hamburger e tema geral
 st.markdown("""<style>
-/* Botão RECOLHER sidebar (dentro da sidebar aberta) */
+/* Botão RECOLHER sidebar — transparente, só ícone */
 [data-testid="stSidebarCollapseButton"] button {
-    background:#ef7736!important;border-radius:10px!important;
-    width:38px!important;height:38px!important;border:2px solid #d4602a!important;
-    box-shadow:0 2px 8px rgba(239,119,54,.45)!important;
+    background:transparent!important;border:none!important;
+    box-shadow:none!important;
     display:flex!important;align-items:center!important;justify-content:center!important;
-    position:fixed!important;top:12px!important;left:12px!important;z-index:999!important;
 }
-[data-testid="stSidebarCollapseButton"] button:hover{background:#d4602a!important;}
-[data-testid="stSidebarCollapseButton"] button svg{display:none!important;}
-[data-testid="stSidebarCollapseButton"] button::after{content:'☰';font-size:17px;color:white;font-weight:800;}
-/* Botão EXPANDIR sidebar (sidebar recolhida) */
+[data-testid="stSidebarCollapseButton"] button:hover{background:rgba(255,255,255,.1)!important;border-radius:6px!important;}
+[data-testid="stSidebarCollapseButton"] button svg{opacity:.7;}
+/* Botão EXPANDIR sidebar */
 button[data-testid="collapsedControl"] {
-    background:#ef7736!important;border-radius:10px!important;
-    width:38px!important;height:38px!important;border:2px solid #d4602a!important;
-    box-shadow:0 2px 8px rgba(239,119,54,.45)!important;
-    display:flex!important;align-items:center!important;justify-content:center!important;
+    background:transparent!important;border:none!important;box-shadow:none!important;
 }
-button[data-testid="collapsedControl"]:hover{background:#d4602a!important;}
-button[data-testid="collapsedControl"] svg{display:none!important;}
-button[data-testid="collapsedControl"]::after{content:'☰';font-size:17px;color:white;font-weight:800;}
+button[data-testid="collapsedControl"]:hover{background:rgba(0,0,0,.08)!important;border-radius:6px!important;}
 section[data-testid="stSidebar"]{transition:all .25s ease;}
+/* Botões de módulo — fonte preta no foco/hover (fundo amarelo) */
+section[data-testid="stSidebar"] .stButton>button:focus,
+section[data-testid="stSidebar"] .stButton>button:active {color:#000!important;}
+/* Botão Excel — verde */
+.btn-excel>button {
+    background:#1D6F42!important;color:white!important;font-weight:700!important;border:none!important;
+}
+.btn-excel>button:hover{background:#175a35!important;color:white!important;}
+/* Botão PDF — vermelho */
+.btn-pdf>button {
+    background:#c0392b!important;color:white!important;font-weight:700!important;border:none!important;
+}
+.btn-pdf>button:hover{background:#a93226!important;color:white!important;}
 </style>""", unsafe_allow_html=True)
 # Marca a página como pt-BR e "não traduzir": senão a tradução automática do navegador
 # troca "mil" por "milhões" nos KPIs (é bug do TRADUTOR, não do cálculo). Best-effort.
@@ -226,7 +231,7 @@ st.sidebar.markdown(f"""
   <div style='font-size:2.2rem;'>🥚</div>
   <div style='font-size:1rem;font-weight:800;color:#e5dfcc;letter-spacing:1px;margin-top:4px;'>TRES AMORES AGRONEGÓCIO</div>
   <div style='font-size:.65rem;color:#c4b49a;letter-spacing:2px;text-transform:uppercase;margin-top:2px;'>Painel Financeiro</div>
-  <div style='font-size:.75rem;color:#d4b896;margin-top:8px;'>👤 {_nome_usuario}</div>
+  <div style='font-size:.72rem;color:#c4a87a;margin-top:6px;'>👤 {_nome_usuario}</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -347,8 +352,7 @@ st.markdown("<hr style='margin:4px 0 2px 0;border:none;border-top:2px solid #ef7
 if dfs["dropped"]:
     st.sidebar.warning("Duplicados ignorados:\n" + "\n".join("• " + d for d in dfs["dropped"]))
 
-biologico = st.sidebar.checkbox("🐔 Ativo biológico", value=cfg_obj.biologico_default,
-    help="Liga: capitaliza o custo de recria e amortiza na postura (contra GS02). Desliga: recria vira despesa no período.")
+biologico = cfg_obj.biologico_default  # ativo biológico sempre ligado (padrão do config)
 
 _per_tuple = tuple(per)   # tuple é hasheável → permite cache por período
 
@@ -371,19 +375,25 @@ st.sidebar.divider()
 try:
     import export as EXP
     _nome = "Painel_3Amores_" + "".join(c if c.isalnum() else "_" for c in sel) + ".xlsx"
-    st.sidebar.download_button("📦 Exportar tudo (Excel)",
-        EXP.build_excel(dfs, per, cfg_obj, biologico, caixa_real_v, adiant_v, aporte_v, tx_ex, emprest_v, overrides_ex),
-        file_name=_nome, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True, help="DRE, Fluxo de Caixa, Balanço, Indicadores, Receita, Reconciliação e Reapropriar — 1 aba cada.")
+    with st.sidebar:
+        st.markdown('<div class="btn-excel">', unsafe_allow_html=True)
+        st.download_button("📗 Exportar em Excel",
+            EXP.build_excel(dfs, per, cfg_obj, biologico, caixa_real_v, adiant_v, aporte_v, tx_ex, emprest_v, overrides_ex),
+            file_name=_nome, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True, help="DRE, Fluxo de Caixa, Balanço, Indicadores, Receita, Reconciliação e Reapropriar — 1 aba cada.")
+        st.markdown('</div>', unsafe_allow_html=True)
 except Exception as _e:
-    st.sidebar.caption(f"(export Excel indisponível: {_e})")
+    st.sidebar.caption(f"(Excel indisponível: {_e})")
 try:
     import report as RPT
     _pnome = "Relatorio_3Amores_" + "".join(c if c.isalnum() else "_" for c in sel) + ".pdf"
-    st.sidebar.download_button("📄 Relatório consolidado (PDF)",
-        RPT.build_pdf(dfs, per, cfg_obj, biologico, caixa_real_v, adiant_v, aporte_v, emprest_v, tx_ex, overrides_ex, sel),
-        file_name=_pnome, mime="application/pdf", use_container_width=True,
-        help="3 páginas para o sócio: veredito + DRE + Fluxo de Caixa + Balanço + Indicadores + Reconciliação.")
+    with st.sidebar:
+        st.markdown('<div class="btn-pdf">', unsafe_allow_html=True)
+        st.download_button("📕 Exportar em PDF",
+            RPT.build_pdf(dfs, per, cfg_obj, biologico, caixa_real_v, adiant_v, aporte_v, emprest_v, tx_ex, overrides_ex, sel),
+            file_name=_pnome, mime="application/pdf", use_container_width=True,
+            help="3 páginas para o sócio: veredito + DRE + Fluxo de Caixa + Balanço + Indicadores + Reconciliação.")
+        st.markdown('</div>', unsafe_allow_html=True)
 except Exception as _e:
     st.sidebar.caption(f"(PDF indisponível: {_e})")
 
