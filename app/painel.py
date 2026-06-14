@@ -45,33 +45,33 @@ st.set_page_config(page_title="Painel Financeiro 3 Amores", page_icon="🥚", la
 _brand.aplicar()
 # CSS: sidebar hamburger e tema geral
 st.markdown("""<style>
-/* Botão RECOLHER sidebar — transparente, só ícone */
-[data-testid="stSidebarCollapseButton"] button {
-    background:transparent!important;border:none!important;
-    box-shadow:none!important;
-    display:flex!important;align-items:center!important;justify-content:center!important;
-}
-[data-testid="stSidebarCollapseButton"] button:hover{background:rgba(255,255,255,.1)!important;border-radius:6px!important;}
-[data-testid="stSidebarCollapseButton"] button svg{opacity:.7;}
-/* Botão EXPANDIR sidebar */
+/* Botão RECOLHER/EXPANDIR sidebar — transparente */
+[data-testid="stSidebarCollapseButton"] button,
 button[data-testid="collapsedControl"] {
     background:transparent!important;border:none!important;box-shadow:none!important;
 }
-button[data-testid="collapsedControl"]:hover{background:rgba(0,0,0,.08)!important;border-radius:6px!important;}
+[data-testid="stSidebarCollapseButton"] button:hover,
+button[data-testid="collapsedControl"]:hover {
+    background:rgba(255,255,255,.12)!important;border-radius:6px!important;
+}
 section[data-testid="stSidebar"]{transition:all .25s ease;}
-/* Botões de módulo — fonte preta no foco/hover (fundo amarelo) */
-section[data-testid="stSidebar"] .stButton>button:focus,
-section[data-testid="stSidebar"] .stButton>button:active {color:#000!important;}
+/* Botões de módulo — fonte escura no hover (contraste com fundo amarelo ativo) */
+section[data-testid="stSidebar"] .stButton button:hover,
+section[data-testid="stSidebar"] .stButton button:focus,
+section[data-testid="stSidebar"] .stButton button:active {color:#111!important;}
 /* Botão Excel — verde */
-.btn-excel>button {
-    background:#1D6F42!important;color:white!important;font-weight:700!important;border:none!important;
+.btn-excel div[data-testid="stDownloadButton"] button {
+    background:#1D6F42!important;color:white!important;font-weight:700!important;border:none!important;border-radius:8px!important;
 }
-.btn-excel>button:hover{background:#175a35!important;color:white!important;}
+.btn-excel div[data-testid="stDownloadButton"] button:hover {background:#175a35!important;color:white!important;}
 /* Botão PDF — vermelho */
-.btn-pdf>button {
-    background:#c0392b!important;color:white!important;font-weight:700!important;border:none!important;
+.btn-pdf div[data-testid="stDownloadButton"] button {
+    background:#c0392b!important;color:white!important;font-weight:700!important;border:none!important;border-radius:8px!important;
 }
-.btn-pdf>button:hover{background:#a93226!important;color:white!important;}
+.btn-pdf div[data-testid="stDownloadButton"] button:hover {background:#a93226!important;color:white!important;}
+/* Spinner — esconde o texto, mantém o ícone girando */
+div[data-testid="stSpinner"] p,
+div[data-testid="stSpinner"] span { display:none!important; }
 </style>""", unsafe_allow_html=True)
 # Marca a página como pt-BR e "não traduzir": senão a tradução automática do navegador
 # troca "mil" por "milhões" nos KPIs (é bug do TRADUTOR, não do cálculo). Best-effort.
@@ -280,74 +280,86 @@ def _get_bloco(row):
     if g == "PARTICULAR":   return "Particular"
     return g.title() if g else "Outros"
 
-# -------- Cabeçalho compacto: Período | Seletor | Bloco | CC --------
-_hp, _hs, _hb, _hc = st.columns([1.8, 3.0, 2.2, 2.2])
+_modulo_pre = st.session_state.get("modulo_ativo", "Início")
 
-with _hp:
-    modo = st.radio("📅 Período", ["Acumulado", "Ano", "Mês", "Meses", "Intervalo"],
-                    horizontal=True, key="modo_per", label_visibility="collapsed")
-
-with _hs:
-    if modo == "Ano":
-        a = st.selectbox("Ano", anos, index=len(anos) - 1, key="ano_per", label_visibility="collapsed")
-        per = [p for p in periodos if p[:4] == a]; sel = f"Ano {a}"
-    elif modo == "Mês":
-        m = st.selectbox("Mês", periodos, index=len(periodos) - 1, key="mes_per", label_visibility="collapsed")
-        per = [m]; sel = m
-    elif modo == "Meses":
-        _ms = st.multiselect(
-            "Meses", periodos,
-            default=periodos[-min(3, len(periodos)):],
-            format_func=_mes_lbl, key="meses_per",
-            label_visibility="collapsed",
-            placeholder="Selecione meses (não sequenciais)...",
-        )
-        per = sorted(_ms) if _ms else periodos
-        sel = "Meses: " + ", ".join(_mes_lbl(p) for p in per) if per != periodos else "Todos os meses"
-    elif modo == "Intervalo":
-        _si1, _si2 = st.columns(2)
-        with _si1: ini = st.selectbox("De", periodos, index=0, key="ini_per", label_visibility="collapsed")
-        with _si2: fim = st.selectbox("Até", periodos, index=len(periodos) - 1, key="fim_per", label_visibility="collapsed")
-        if ini > fim: ini, fim = fim, ini
-        per = [p for p in periodos if ini <= p <= fim]; sel = f"{ini} a {fim}"
-    else:
-        per = periodos; sel = "Acumulado (tudo)"
-        st.markdown("<div style='font-size:.78rem;color:#888;padding-top:6px;'>todos os meses</div>",
-                    unsafe_allow_html=True)
-
-# Bloco/CC global — filtra despesa + receita
+# -------- Cabeçalho compacto (oculto na tela Início) --------
 _desp_g = dfs["despesa"]
 _rec_g  = dfs["receita"]
 if len(_desp_g):
     _desp_g = _desp_g.copy()
     _desp_g["bloco"] = _desp_g.apply(_get_bloco, axis=1)
-_blocos_all_g = sorted(_desp_g["bloco"].dropna().unique()) if len(_desp_g) else []
 
-with _hb:
-    _sel_blocos_g = st.multiselect("🏗️ Bloco", _blocos_all_g, default=[],
-                                   key="g_blocos", placeholder="Todos os blocos",
-                                   label_visibility="collapsed")
-_sel_blocos_g = _sel_blocos_g or _blocos_all_g
-_desp_g_b   = _desp_g[_desp_g["bloco"].isin(_sel_blocos_g)] if len(_desp_g) else _desp_g
-_desp_ccs_g = sorted(_desp_g_b["cc"].dropna().unique()) if len(_desp_g_b) else []
-_rec_ccs_g  = sorted({c for c in (_rec_g["cc"].dropna() if "cc" in _rec_g.columns and len(_rec_g) else []) if c})
-_ccs_all_g  = sorted(set(_desp_ccs_g) | set(_rec_ccs_g))
+if _modulo_pre != "Início":
+    _hp, _hs, _hb, _hc = st.columns([1.8, 3.0, 2.2, 2.2])
 
-with _hc:
-    _sel_ccs_g_raw = st.multiselect("🏷️ CC", _ccs_all_g, default=[],
-                                    key="g_ccs", placeholder="Todos os CCs",
-                                    label_visibility="collapsed")
-_sel_ccs_g = _sel_ccs_g_raw or _ccs_all_g
+    with _hp:
+        modo = st.radio("📅 Período", ["Acumulado", "Ano", "Mês", "Meses", "Intervalo"],
+                        horizontal=True, key="modo_per", label_visibility="collapsed")
 
-# Aplica filtro global (despesa + receita)
-_desp_fil_g = _desp_g_b[_desp_g_b["cc"].isin(_sel_ccs_g)] if len(_desp_g_b) else _desp_g_b
-_rec_fil_g  = (_rec_g[_rec_g["cc"].isin(_sel_ccs_g)]
-               if _sel_ccs_g_raw and "cc" in _rec_g.columns and len(_rec_g) else None)
-_filtrou_g  = bool(_sel_ccs_g_raw) or len(_desp_fil_g) < len(_desp_g)
+    with _hs:
+        if modo == "Ano":
+            a = st.selectbox("Ano", anos, index=len(anos) - 1, key="ano_per", label_visibility="collapsed")
+            per = [p for p in periodos if p[:4] == a]; sel = f"Ano {a}"
+        elif modo == "Mês":
+            m = st.selectbox("Mês", periodos, index=len(periodos) - 1, key="mes_per", label_visibility="collapsed")
+            per = [m]; sel = m
+        elif modo == "Meses":
+            _ms = st.multiselect(
+                "Meses", periodos,
+                default=periodos[-min(3, len(periodos)):],
+                format_func=_mes_lbl, key="meses_per",
+                label_visibility="collapsed",
+                placeholder="Selecione meses (não sequenciais)...",
+            )
+            per = sorted(_ms) if _ms else periodos
+            sel = "Meses: " + ", ".join(_mes_lbl(p) for p in per) if per != periodos else "Todos os meses"
+        elif modo == "Intervalo":
+            _si1, _si2 = st.columns(2)
+            with _si1: ini = st.selectbox("De", periodos, index=0, key="ini_per", label_visibility="collapsed")
+            with _si2: fim = st.selectbox("Até", periodos, index=len(periodos) - 1, key="fim_per", label_visibility="collapsed")
+            if ini > fim: ini, fim = fim, ini
+            per = [p for p in periodos if ini <= p <= fim]; sel = f"{ini} a {fim}"
+        else:
+            per = periodos; sel = "Acumulado (tudo)"
+            st.markdown("<div style='font-size:.78rem;color:#888;padding-top:6px;'>todos os meses</div>",
+                        unsafe_allow_html=True)
 
-# Linha divisória fina
-st.markdown("<hr style='margin:4px 0 2px 0;border:none;border-top:2px solid #ef7736;opacity:.35;'>",
-            unsafe_allow_html=True)
+    _blocos_all_g = sorted(_desp_g["bloco"].dropna().unique()) if len(_desp_g) else []
+    with _hb:
+        _sel_blocos_g = st.multiselect("🏗️ Bloco", _blocos_all_g, default=[],
+                                       key="g_blocos", placeholder="Todos os blocos",
+                                       label_visibility="collapsed")
+    _sel_blocos_g = _sel_blocos_g or _blocos_all_g
+    _desp_g_b   = _desp_g[_desp_g["bloco"].isin(_sel_blocos_g)] if len(_desp_g) else _desp_g
+    _desp_ccs_g = sorted(_desp_g_b["cc"].dropna().unique()) if len(_desp_g_b) else []
+    _rec_ccs_g  = sorted({c for c in (_rec_g["cc"].dropna() if "cc" in _rec_g.columns and len(_rec_g) else []) if c})
+    _ccs_all_g  = sorted(set(_desp_ccs_g) | set(_rec_ccs_g))
+    with _hc:
+        _sel_ccs_g_raw = st.multiselect("🏷️ CC", _ccs_all_g, default=[],
+                                        key="g_ccs", placeholder="Todos os CCs",
+                                        label_visibility="collapsed")
+    _sel_ccs_g  = _sel_ccs_g_raw or _ccs_all_g
+    _desp_fil_g = _desp_g_b[_desp_g_b["cc"].isin(_sel_ccs_g)] if len(_desp_g_b) else _desp_g_b
+    _rec_fil_g  = (_rec_g[_rec_g["cc"].isin(_sel_ccs_g)]
+                   if _sel_ccs_g_raw and "cc" in _rec_g.columns and len(_rec_g) else None)
+    _filtrou_g  = bool(_sel_ccs_g_raw) or len(_desp_fil_g) < len(_desp_g)
+
+    st.markdown("<hr style='margin:4px 0 2px 0;border:none;border-top:2px solid #ef7736;opacity:.35;'>",
+                unsafe_allow_html=True)
+else:
+    # Tela Início: sem filtros — usa período completo como padrão
+    modo            = "Acumulado"
+    per             = periodos
+    sel             = "Acumulado (tudo)"
+    _blocos_all_g   = []
+    _sel_blocos_g   = []
+    _desp_g_b       = _desp_g
+    _ccs_all_g      = []
+    _sel_ccs_g_raw  = []
+    _sel_ccs_g      = []
+    _desp_fil_g     = _desp_g
+    _rec_fil_g      = None
+    _filtrou_g      = False
 
 if dfs["dropped"]:
     st.sidebar.warning("Duplicados ignorados:\n" + "\n".join("• " + d for d in dfs["dropped"]))
@@ -397,7 +409,7 @@ try:
 except Exception as _e:
     st.sidebar.caption(f"(PDF indisponível: {_e})")
 
-_modulo = st.session_state.get("modulo_ativo", "Início")
+_modulo = _modulo_pre
 
 # helper bloco (usado no DRE e no FC)
 def _filtro_bloco_cc(df_src, key_prefix):
@@ -424,12 +436,9 @@ def _filtro_bloco_cc(df_src, key_prefix):
 if _modulo == "Início":
     _primer = _nome_usuario.split()[0] if _nome_usuario else "Usuário"
     st.markdown(f"""
-    <div style="padding:32px 8px 16px 8px;">
+    <div style="padding:32px 8px 20px 8px;">
       <div style="font-size:2rem;font-weight:800;color:#3d2008;">
         👋 Seja bem-vindo, {_primer}!
-      </div>
-      <div style="font-size:1rem;color:#888;margin-top:6px;">
-        Painel Financeiro Gerencial · Tres Amores Agronegócio
       </div>
     </div>
     """, unsafe_allow_html=True)

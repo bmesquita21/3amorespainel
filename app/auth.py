@@ -113,7 +113,6 @@ def logout_button():
     except Exception:
         return
     if nome:
-        st.sidebar.caption(f"👤 {nome}")
         if st.sidebar.button("🚪 Sair", use_container_width=True):
             for k in ("auth_ok", "auth_nome"):
                 st.session_state.pop(k, None)
