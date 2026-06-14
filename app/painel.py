@@ -389,6 +389,27 @@ except Exception as _e:
 
 _modulo = st.session_state.get("modulo_ativo", "Início")
 
+# helper bloco (usado no DRE e no FC)
+def _filtro_bloco_cc(df_src, key_prefix):
+    df = df_src.copy()
+    if len(df):
+        df["bloco"] = df.apply(_get_bloco, axis=1)
+    else:
+        df["bloco"] = ""
+    blocos_all = sorted(df["bloco"].dropna().unique()) if len(df) else []
+    _c1, _c2 = st.columns(2)
+    with _c1:
+        sel_b = st.multiselect("🏗️ Bloco", blocos_all, default=[],
+                               key=f"{key_prefix}_blocos", placeholder="Todos os blocos")
+    sel_b = sel_b or blocos_all
+    df_b = df[df["bloco"].isin(sel_b)]
+    ccs_all = sorted(df_b["cc"].dropna().unique()) if len(df_b) else []
+    with _c2:
+        sel_c = st.multiselect("🏷️ Centro de Custo", ccs_all, default=[],
+                               key=f"{key_prefix}_ccs", placeholder="Todos os CCs do bloco")
+    sel_c = sel_c or ccs_all
+    return df_b[df_b["cc"].isin(sel_c)]
+
 # ---------------- INÍCIO ----------------
 if _modulo == "Início":
     _primer = _nome_usuario.split()[0] if _nome_usuario else "Usuário"
@@ -670,28 +691,6 @@ elif _modulo == "DRE":
     _estv = float(est.valor.sum()) if len(est) else 0
     b[3].metric("Estoque (compras MP)", B.brl_compact(_estv), help=B.brl(_estv))
     st.caption("PIS/COFINS sem lançamento → não calculados por alíquota. Embalagem por **consumo** (composição × caixas produzidas; ver cobertura na aba Estoque). Salários sem CC caem em Reapropriar.")
-
-# helper bloco (usado no DRE e no FC)
-def _filtro_bloco_cc(df_src, key_prefix):
-    """(legado, mantido para FC se necessário) Renderiza filtros Bloco + CC e retorna df filtrado."""
-    df = df_src.copy()
-    if len(df):
-        df["bloco"] = df.apply(_get_bloco, axis=1)
-    else:
-        df["bloco"] = ""
-    blocos_all = sorted(df["bloco"].dropna().unique()) if len(df) else []
-    _c1, _c2 = st.columns(2)
-    with _c1:
-        sel_b = st.multiselect("🏗️ Bloco", blocos_all, default=[],
-                               key=f"{key_prefix}_blocos", placeholder="Todos os blocos")
-    sel_b = sel_b or blocos_all
-    df_b = df[df["bloco"].isin(sel_b)]
-    ccs_all = sorted(df_b["cc"].dropna().unique()) if len(df_b) else []
-    with _c2:
-        sel_c = st.multiselect("🏷️ Centro de Custo", ccs_all, default=[],
-                               key=f"{key_prefix}_ccs", placeholder="Todos os CCs do bloco")
-    sel_c = sel_c or ccs_all
-    return df_b[df_b["cc"].isin(sel_c)]
 
 # ---------------- Reapropriar ----------------
 elif _modulo == "Reapropriar/Verificar":
